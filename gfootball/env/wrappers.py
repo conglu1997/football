@@ -354,25 +354,34 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
                 if self.is_visible:
                     lst.extend(self.location[:2])
                     norm = np.linalg.norm(self.attrs["view_direction"])
-                    lst.extend([self.attrs["move_direction"][0]/norm,
-                                self.attrs["move_direction"][1]/norm,
-                                norm])
+                    if norm != 0.0:
+                        lst.extend([self.attrs["move_direction"][0]/norm,
+                                    self.attrs["move_direction"][1]/norm,
+                                    norm])
+                    else:
+                        lst.extend([0]*2)
                     norm = np.linalg.norm(self.attrs["view_direction"])
-                    lst.extend([self.attrs["view_direction"][0]/norm,
-                                self.attrs["view_direction"][1]/norm])
+                    if norm != 0.0:
+                        lst.extend([self.attrs["view_direction"][0]/norm,
+                                    self.attrs["view_direction"][1]/norm])
+                    else:
+                        lst.extend([0,0])
                 else:
                     lst.extend([0]*7)
             elif self.type in ["ball"]:
                 if self.is_visible:
                     norm = np.linalg.norm(self.attrs["move_direction"])
                     xy_norm = np.linalg.norm(self.attrs["move_direction"][:2])
-                    lst.extend([self.attrs["move_direction"][0]/xy_norm,
-                                self.attrs["move_direction"][1]/xy_norm,
-                                self.attrs["move_direction"][2]/norm,
-                                norm])
+                    if norm != 0.0 and xy_norm != 0.0:
+                        lst.extend([self.attrs["move_direction"][0]/xy_norm,
+                                    self.attrs["move_direction"][1]/xy_norm,
+                                    self.attrs["move_direction"][2]/norm,
+                                    norm])
+                    else:
+                        lst.extend([0]*4)
                     lst.extend({-1:[1,0,0],0:[0,1,0],1:[0,0,1]}[self.attrs["owned_team"]])
                 else:
-                    lst.extend([0]*3)
+                    lst.extend([0]*7)
 
             return lst
 
@@ -419,6 +428,9 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
         return (-(180 + t) if t < 0 else t)
 
       def _is_visible(player_view_direction, rel_obj_location, view_cone_xy_opening, view_cone_z_opening):
+        if np.linalg.norm(rel_obj_location) == 0.0:
+            return True
+
         rel_angle = _signed_angle(rel_obj_location[:2], player_view_direction[:2])
         rel_z_angle = np.arctan(rel_obj_location[2] / np.linalg.norm(rel_obj_location)) * 180.0 / np.pi if sum(rel_obj_location) != 0.0 else 0.0
 
@@ -442,8 +454,11 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
         curr_obj = obj_dist_sorted[0]
         for obj in obj_dist_sorted[1:]:
           # relative location wrt curr_obj
+          if np.linalg.norm(curr_obj.location[:2]) == 0.0 or np.linalg.norm(curr_obj.location) == 0.0:
+              continue
+
           blocked_xy_angle = 2*np.degrees(np.arctan(self.player_width/np.linalg.norm(curr_obj.location[:2])))
-          blocked_z_angle = np.arctan(self.player_height/np.linalg.norm(curr_obj.location[:2]))
+          blocked_z_angle = np.arctan(self.player_height/np.linalg.norm(curr_obj.location))
           obj.is_visible = not _is_visible(player_view_direction,
                                            obj.location,
                                            blocked_xy_angle,
