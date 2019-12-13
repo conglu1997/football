@@ -1,13 +1,13 @@
 # coding=utf-8
 # Copyright 2019 Google LLC
-# Licensed under the Apache License, Version 2.0 (the "License");
+# Licensed under the Apache License, Version 2.0 (the 'License');
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
+# distributed under the License is distributed on an 'AS IS' BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
@@ -294,15 +294,15 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
                po_player_width=0.060,
                po_player_height=0.033,
                po_player_view_radius=-1,
-               po_depth_noise="default"):
+               po_depth_noise='default'):
     gym.ObservationWrapper.__init__(self, env)
     self.po_view_cone_xy_opening = po_view_cone_xy_opening
     self.po_view_cone_z_opening = po_view_cone_z_opening
     self.po_player_width = po_player_width
     self.po_player_height = po_player_height
     self.po_player_view_radius = po_player_view_radius
-    self.po_depth_noise = {"type":"gaussian", "sigma":0.1, "attenuation_type": "fixed_angular_resolution", "angular_resolution_degrees":0.2}\
-        if po_depth_noise == "default" else po_depth_noise
+    self.po_depth_noise = {'type':'gaussian', 'sigma':0.1, 'attenuation_type': 'fixed_angular_resolution', 'angular_resolution_degrees':0.2}\
+        if po_depth_noise == 'default' else po_depth_noise
     shape = (self.env.unwrapped._config.number_of_players_agent_controls(), 115)
     self.observation_space = gym.spaces.Box(
         low=-1, high=1, shape=shape, dtype=np.float32)
@@ -318,21 +318,28 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
       being controlled.
     """
 
+    n_left_players = len(observation[0]["left_team"])
+    n_right_players = len(observation[0]["right_team"])
+
     # initialise / update player view directions
     player_view_directions = getattr(self, "player_view_directions", None)
     if player_view_directions is None:
         # set player view directions to players facing forward at the beginning
         self.player_view_directions = {}
-        self.player_view_directions["right"] = np.zeros((len(observation), 2))
+        self.player_view_directions["right"] = np.zeros((n_right_players, 2))
         self.player_view_directions["right"][:, 0] = -1
-        self.player_view_directions["left"] = np.zeros((len(observation), 2))
+        self.player_view_directions["left"] = np.zeros((n_left_players, 2))
         self.player_view_directions["left"][:, 0] = 1
 
-    for player_id, obs in enumerate(observation):
+    obs = observation[0]
+    for player_id in range(n_left_players):
         if np.sum(obs["left_team_direction"]) != 0.0:
-            self.player_view_directions["left"][player_id] = obs["left_team_direction"] / np.linalg.norm(obs["left_team_direction"])
+            self.player_view_directions["left"][player_id] = obs["left_team_direction"][player_id] / \
+                                                             np.linalg.norm(obs["left_team_direction"][player_id])
+    for player_id in range(n_right_players):
         if np.sum(obs["right_team_direction"]) != 0.0:
-            self.player_view_directions["right"][player_id] = obs["left_team_direction"] / np.linalg.norm(obs["left_team_direction"])
+            self.player_view_directions["right"][player_id] = obs["right_team_direction"][player_id] / \
+                                                              np.linalg.norm(obs["right_team_direction"][player_id])
 
     _add_zero = lambda vec: np.concatenate([vec, np.array([0])], -1)  # helper function used to extend 2d to 3d coords
 
@@ -350,36 +357,36 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
             lst = []
             lst.extend([1.0 if self.is_visible else 0.0])
 
-            if self.type in ["player"]:
+            if self.type in ['player']:
                 if self.is_visible:
                     lst.extend(self.location[:2])
-                    norm = np.linalg.norm(self.attrs["view_direction"])
+                    norm = np.linalg.norm(self.attrs['view_direction'])
                     if norm != 0.0:
-                        lst.extend([self.attrs["move_direction"][0]/norm,
-                                    self.attrs["move_direction"][1]/norm,
+                        lst.extend([self.attrs['move_direction'][0]/norm,
+                                    self.attrs['move_direction'][1]/norm,
                                     norm])
                     else:
                         lst.extend([0]*2)
-                    norm = np.linalg.norm(self.attrs["view_direction"])
+                    norm = np.linalg.norm(self.attrs['view_direction'])
                     if norm != 0.0:
-                        lst.extend([self.attrs["view_direction"][0]/norm,
-                                    self.attrs["view_direction"][1]/norm])
+                        lst.extend([self.attrs['view_direction'][0]/norm,
+                                    self.attrs['view_direction'][1]/norm])
                     else:
                         lst.extend([0,0])
                 else:
                     lst.extend([0]*7)
-            elif self.type in ["ball"]:
+            elif self.type in ['ball']:
                 if self.is_visible:
-                    norm = np.linalg.norm(self.attrs["move_direction"])
-                    xy_norm = np.linalg.norm(self.attrs["move_direction"][:2])
+                    norm = np.linalg.norm(self.attrs['move_direction'])
+                    xy_norm = np.linalg.norm(self.attrs['move_direction'][:2])
                     if norm != 0.0 and xy_norm != 0.0:
-                        lst.extend([self.attrs["move_direction"][0]/xy_norm,
-                                    self.attrs["move_direction"][1]/xy_norm,
-                                    self.attrs["move_direction"][2]/norm,
+                        lst.extend([self.attrs['move_direction'][0]/xy_norm,
+                                    self.attrs['move_direction'][1]/xy_norm,
+                                    self.attrs['move_direction'][2]/norm,
                                     norm])
                     else:
                         lst.extend([0]*4)
-                    lst.extend({-1:[1,0,0],0:[0,1,0],1:[0,0,1]}[self.attrs["owned_team"]])
+                    lst.extend({-1:[1,0,0],0:[0,1,0],1:[0,0,1]}[self.attrs['owned_team']])
                 else:
                     lst.extend([0]*7)
 
@@ -389,33 +396,33 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
     final_obs = []
     for player_id, obs in enumerate(observation):
       player_location = _add_zero(obs['left_team'][player_id])  # [x,y] of active player
-      player_view_direction = _add_zero(self.player_view_directions["left"][player_id])
+      player_view_direction = _add_zero(self.player_view_directions['left'][player_id])
       obj_lst = []
 
       # encapsulate left players
-      left_player_list = [_gobj(label="left_player__{}".format(i),
-                           type="player",
+      left_player_list = [_gobj(label='left_player__{}'.format(i),
+                           type='player',
                            location=_add_zero(loc)-player_location,
-                           attrs=dict(view_direction=_add_zero(self.player_view_directions["left"][i]),
+                           attrs=dict(view_direction=_add_zero(self.player_view_directions['left'][i]),
                                      move_direction=_add_zero(dir)) for i, (loc, dir) in enumerate(zip(obs['left_team'], obs['left_team_direction']))
                            ]
       obj_lst.extend(left_player_list)
 
       # encapsulate right players
-      right_player_list = [_gobj(label="right_player__{}".format(i),
-                                   type="player",
+      right_player_list = [_gobj(label='right_player__{}'.format(i),
+                                   type='player',
                                    location=_add_zero(loc)-player_location,
-                                   attrs=dict(view_direction=_add_zero(self.player_view_directions["right"][i]),
+                                   attrs=dict(view_direction=_add_zero(self.player_view_directions['right'][i]),
                                              move_direction=_add_zero(dir))) for i, (loc, dir) in enumerate(zip(obs['right_team'], obs['right_team_direction']))
                                    ]
       obj_lst.extend(right_player_list)
 
       # encapsulate ball
-      ball = _gobj(label="ball",
-                   type="ball",
-                   location=obs["ball"]-player_location,
-                   attrs=dict(owned_team=obs["ball_owned_team"],
-                             move_direction=obs["ball_direction"]))
+      ball = _gobj(label='ball',
+                   type='ball',
+                   location=obs['ball']-player_location,
+                   attrs=dict(owned_team=obs['ball_owned_team'],
+                             move_direction=obs['ball_direction']))
 
       # update visibilities wrt player view radius
       if self.po_player_view_radius != -1:
@@ -449,7 +456,7 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
         obj.is_visible = _is_visible(player_view_direction, obj.location, self.view_cone_xy_opening, self.view_cone_z_opening)
 
       # update visibilities wrt occlusion
-      obj_dist_sorted = sorted([o for o in obj_lst if o.is_visible and o.type=="player"], key=lambda obj: obj.distance)
+      obj_dist_sorted = sorted([o for o in obj_lst if o.is_visible and o.type=='player'], key=lambda obj: obj.distance)
       while len(obj_dist_sorted) > 1:
         curr_obj = obj_dist_sorted[0]
         for obj in obj_dist_sorted[1:]:
@@ -471,16 +478,16 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
       if self.po_depth_noise is not None:
         visible_objs = [obj for obj in obj_lst if obj.is_visible]
         for obj in visible_objs:
-          if self.po_depth_noise.get("type", None) == "gaussian":
-            if self.po_depth_noise.get("attenuation_type", None) == "fixed_angular_resolution":
-              angular_resolution = self.po_depth_noise.get("angular_resolution_degrees", 2) * np.pi / 180.0
+          if self.po_depth_noise.get('type', None) == 'gaussian':
+            if self.po_depth_noise.get('attenuation_type', None) == 'fixed_angular_resolution':
+              angular_resolution = self.po_depth_noise.get('angular_resolution_degrees', 2) * np.pi / 180.0
               sigma = obj.distance * angular_resolution
               # noise relevant quantities
               obj.location += np.random.normal(0, sigma, (3,))
-              obj.attrs["move_direction"] += np.random.normal(0, sigma, (3,))
-              if obj.type == "player":
+              obj.attrs['move_direction'] += np.random.normal(0, sigma, (3,))
+              if obj.type == 'player':
                 obj.location[2] = 0.0  # it is commonly known that players are confined to xy plane
-                obj.attrs["view_direction"] += np.random.normal(0, sigma, (3,))
+                obj.attrs['view_direction'] += np.random.normal(0, sigma, (3,))
 
       # collate observation from object representations
       o = []
