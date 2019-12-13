@@ -453,7 +453,7 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
         return True
 
       for obj in obj_lst:
-        obj.is_visible = _is_visible(player_view_direction, obj.location, self.view_cone_xy_opening, self.view_cone_z_opening)
+        obj.is_visible = _is_visible(player_view_direction, obj.location, self.po_view_cone_xy_opening, self.po_view_cone_z_opening)
 
       # update visibilities wrt occlusion
       obj_dist_sorted = sorted([o for o in obj_lst if o.is_visible and o.type=='player'], key=lambda obj: obj.distance)
@@ -468,7 +468,6 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
           blocked_z_angle = np.arctan(self.po_player_height/np.linalg.norm(curr_obj.location))
           obj.is_visible = not _is_visible(player_view_direction,
                                            obj.location,
-                                           blocked_xy_angle,
                                            blocked_xy_angle,
                                            blocked_z_angle)
         # update
