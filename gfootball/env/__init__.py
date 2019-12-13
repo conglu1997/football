@@ -40,7 +40,14 @@ def create_environment(env_name='',
                        enable_sides_swap=False,
                        channel_dimensions=(
                            observation_preprocessing.SMM_WIDTH,
-                           observation_preprocessing.SMM_HEIGHT)):
+                           observation_preprocessing.SMM_HEIGHT),
+                       po_view_cone_xy_opening=160,
+                       po_view_cone_z_opening=70,
+                       po_player_width=0.060,
+                       po_player_height=0.033,
+                       po_player_view_radius=-1,  # switched off by default
+                       po_depth_noise="default"
+                      ):
   """Creates a Google Research Football environment.
 
   Args:
@@ -142,7 +149,14 @@ def create_environment(env_name='',
   elif representation == 'simple115':
     env = wrappers.Simple115StateWrapper(env)
   elif representation == 'maposimple115':
-    env = wrappers.MAPOSimple115StateWrapper(env)
+    env = wrappers.MAPOSimple115StateWrapper(env,
+                                             po_view_cone_xy_opening,
+                                             po_view_cone_z_opening,
+                                             po_player_width,
+                                             po_player_height,
+                                             po_player_view_radius,
+                                             po_depth_noise
+                                             )
   elif representation == 'extracted':
     env = wrappers.SMMWrapper(env, channel_dimensions)
   else:
