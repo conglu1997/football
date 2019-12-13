@@ -21,6 +21,7 @@ from __future__ import print_function
 
 import collections
 import cv2
+from functools import partial
 from gfootball.env import observation_preprocessing
 import gym
 import numpy as np
@@ -273,3 +274,208 @@ class FrameStack(gym.Wrapper):
 
   def _get_observation(self):
     return np.concatenate(list(self.obs), axis=-1)
+
+def _apply_partial_observability(value,
+                                 value_pos,
+                                 player_pos,
+                                 player_view_direction,
+                                 depth_noise,
+                                 view_obstruction,
+                                 view_cone_xy_opening,
+                                 view_cone_z_opening,
+                                 view_cone_distortion,
+                                 value_type="noisable",  # objects of different type are not noised
+                                 invisible_value=-2
+                                 ):
+  """
+  Apply partial observability-induced transformations on physical quantity value, with respect to the player_pos and the
+  value_pos.
+
+  :param value:
+  :param value_pos:
+  :param player_pos:
+  :param player_view_direction:
+  :param depth_noise:
+  :param view_obstruction:
+  :param view_cone_xy_opening:
+  :param view_cone_z_opening:
+  :param value_type:
+  :return:
+  """
+
+  # Convert to coordinates relative to player position
+  rel_pos = value_pos - player_pos[:value_pos.shape[0]]
+  rel_dist = np.linalg.norm(rel_pos)
+  po_value = value.copy() if isinstance(value, np.ndarray) else value
+
+  def signed_angle(a, b):
+      t = np.degrees(np.arctan2(a[0]*b[1]-b[0]*a[1],a[0]*a[1]+b[0]*b[1]))
+      return (-(180+t) if t < 0 else t)
+
+
+  rel_angle = signed_angle(rel_pos[:2], player_view_direction[:2])
+  rel_z_angle = np.arctan(rel_pos[2]/np.linalg.norm(rel_pos)) * 180.0 / np.pi if sum(rel_pos) != 0.0 else 0.0
+
+  # Determine whether value location is visible wrt view cone
+  if view_cone_xy_opening < 360:
+      if (rel_angle < -view_cone_xy_opening // 2) or (rel_angle > view_cone_xy_opening // 2):
+          is_visible = False
+          po_value.fill(invisible_value)
+      else:
+        is_visible = True
+
+  if view_cone_z_opening < 90 and is_visible:
+      if rel_z_angle > view_cone_z_opening:
+          is_visible = False
+          po_value.fill(invisible_value)
+      else:
+        is_visible = True
+
+
+  # If value is visible and of type "noisable", apply suitable noising
+  if is_visible:
+      if value_type == "noisable":
+          if depth_noise is not None:
+              if depth_noise.get("type", None) == "gaussian":
+                  if depth_noise.get("attenuation_type", None) == "fixed_angular_resolution":
+                      angular_resolution = depth_noise.get("angular_resolution_degrees", 2) * np.pi / 180.0
+                      sigma = rel_dist * angular_resolution
+                      # noise along tangential direction
+                      if np.linalg.norm(po_value) != 0.0:
+                          po_value += np.random.normal(0, sigma) * np.array([po_value[1] / np.linalg.norm(po_value),
+                                                                             -po_value[0] / np.linalg.norm(po_value),
+                                                                             po_value[2] / np.linalg.norm(po_value)])
+
+  return po_value, is_visible
+
+
+class MAPOSimple115StateWrapper(gym.ObservationWrapper):
+  """A wrapper that converts an observation to 115-features state.
+
+     Each Observation is converted to coordinates relative to the respective player's absolute position (ego-frame)
+
+     In addition, each observation is modified so as to respect partial observability constraints resulting
+     from:
+      - restricted view cone
+      - depth noise
+      - view obstruction
+  """
+
+  def __init__(self, env):
+    gym.ObservationWrapper.__init__(self, env)
+    shape = (self.env.unwrapped._config.number_of_players_agent_controls(), 115)
+    self.observation_space = gym.spaces.Box(
+        low=-1, high=1, shape=shape, dtype=np.float32)
+
+  def observation(self, observation):
+    """Converts an observation into simple115 format.
+
+    Args:
+      observation: observation that the environment returns
+
+    Returns:
+      (N, 115) shaped representation, where N stands for the number of players
+      being controlled.
+    """
+
+    def add_zero(vec):
+        return np.concatenate([vec, np.array([0])], -1)
+
+    player_view_directions = getattr(self, "player_view_directions", None)
+    if player_view_directions is None:
+        # set player view directions to players facing forward at the beginning
+        self.player_view_directions = np.zeros((len(observation), 2))
+        self.player_view_directions[:, 0] = 1
+
+    # update player view directions
+    for player_id, obs in enumerate(observation):
+        if np.sum(obs["left_team_direction"]) != 0.0:
+            self.player_view_directions[player_id] = obs["left_team_direction"] / np.linalg.norm(obs["left_team_direction"])
+
+    final_obs = []
+    for player_id, obs in enumerate(observation):
+      player_pos = add_zero(obs['left_team'][player_id])  # [x,y] of active player
+      player_view_direction = add_zero(self.player_view_directions[player_id])
+
+      apply_po = partial(_apply_partial_observability,
+                         player_pos=player_pos,
+                         player_view_direction=player_view_direction,
+                         depth_noise=getattr(self, "po_noise", {"type":"gaussian", "sigma":0.1, "attenuation_type": "fixed_angular_resolution", "angular_resolution_degrees":0.2}),
+                         view_obstruction=getattr(self, "po_view_obstruction", True),
+                         view_cone_xy_opening=getattr(self, "po_view_cone_xy_opening", 160),  # 120 degrees corresponds to 2/3 obstructed
+                         view_cone_z_opening=getattr(self, "po_view_cone_z_opening", 70),  # cannot see objects coming in at very steep angles
+                         view_cone_distortion=getattr(self, "view_cone_distortion", None),  # TODO: distortion in view cone fringes
+                         invisible_value=0
+                         )
+
+      left_team = obs['left_team']
+      left_team = np.stack([apply_po(add_zero(o), value_pos=add_zero(o))[0][:2] for o in left_team])
+      left_team_direction = obs['left_team_direction']
+      left_team_direction = np.stack([apply_po(add_zero(o), value_pos=add_zero(o))[0][:2] for o in left_team_direction])
+      right_team = obs['right_team']
+      right_team = np.stack([apply_po(add_zero(o), value_pos=add_zero(o))[0][:2] for o in right_team])
+      right_team_direction = obs['right_team_direction']
+      right_team_direction = np.stack([apply_po(add_zero(o), value_pos=add_zero(o))[0][:2] for o in right_team_direction])
+
+      # If there were less than 11vs11 players we backfill missing values with
+      # -1.
+      # 88 = 11 (players) * 2 (teams) * 2 (positions & directions) * 2 (x & y)
+
+      # ball position
+      ball, ball_is_visible = apply_po(obs['ball'],
+                                       value_pos=obs['ball'])
+
+      ######## determine if there are any obstructions ########
+
+      ######## determine other object properties ##############
+
+      if ball_is_visible:
+          # ball direction
+          ball_direction, _ = apply_po(obs['ball_direction'],
+                                       value_pos=obs['ball'])
+
+          # one hot encoding of which team owns the ball
+          ball_owned, _ = apply_po(obs['ball_owned_team'],
+                                   value_type="discrete",
+                                   value_pos=obs['ball'],
+                                   invisible_value=-2)
+          if ball_owned == -1:
+            ball_owned = [1, 0, 0]
+          elif ball_owned == 0:
+            ball_owned = [0, 1, 0]
+          elif ball_owned == 1:
+            ball_owned = [0, 0, 1]
+      else:
+        ball_direction = np.zeros_like(obs['ball_direction'])
+        ball_owned = [0, 0, 0]
+
+      ######## now extend observations #########################
+
+      o = []
+      o.extend(left_team.flatten().tolist())
+      o.extend(left_team_direction.flatten().tolist())
+      o.extend(right_team.flatten().tolist())
+      o.extend(right_team_direction.flatten().tolist())
+
+      if len(o) < 88:
+          o.extend([-1] * (88 - len(o)))
+
+      o.extend(ball.flatten().tolist())
+      o.extend(ball_direction.flatten().tolist())
+      o.extend(ball_owned)
+
+      active = [0] * 11
+
+      if obs['active'] != -1:
+        active[obs['active']] = 1
+      o.extend(active)
+
+      game_mode = [0] * 7
+      game_mode[obs['game_mode']] = 1
+      o.extend(game_mode)
+
+      # Check whether any of the elements are view-obstructed!
+
+
+      final_obs.append(o)
+    return np.array(final_obs, dtype=np.float32)

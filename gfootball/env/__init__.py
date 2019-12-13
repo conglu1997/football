@@ -141,6 +141,8 @@ def create_environment(env_name='',
                                       channel_dimensions)
   elif representation == 'simple115':
     env = wrappers.Simple115StateWrapper(env)
+  elif representation == 'maposimple115':
+    env = wrappers.MAPOSimple115StateWrapper(env)
   elif representation == 'extracted':
     env = wrappers.SMMWrapper(env, channel_dimensions)
   else:
