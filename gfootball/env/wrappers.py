@@ -389,15 +389,15 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
     final_obs = []
     for player_id, obs in enumerate(observation):
       player_location = _add_zero(obs['left_team'][player_id])  # [x,y] of active player
-      player_view_direction = _add_zero(self.player_view_directions[player_id])
+      player_view_direction = _add_zero(self.player_view_directions["left"][player_id])
       obj_lst = []
 
       # encapsulate left players
       left_player_list = [_gobj(label="left_player__{}".format(i),
                            type="player",
                            location=_add_zero(loc)-player_location,
-                           attr=dict(view_direction=self.player_view_directions["left"][i],
-                                     move_direction=dir)) for i, (loc, dir) in enumerate(zip(obs['left_team'], obs['left_team_direction']))
+                           attrs=dict(view_direction=_add_zero(self.player_view_directions["left"][i]),
+                                     move_direction=_add_zero(dir)) for i, (loc, dir) in enumerate(zip(obs['left_team'], obs['left_team_direction']))
                            ]
       obj_lst.extend(left_player_list)
 
@@ -405,8 +405,8 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
       right_player_list = [_gobj(label="right_player__{}".format(i),
                                    type="player",
                                    location=_add_zero(loc)-player_location,
-                                   attr=dict(view_direction=self.player_view_directions["right"][i],
-                                             move_direction=dir)) for i, (loc, dir) in enumerate(zip(obs['right_team'], obs['right_team_direction']))
+                                   attrs=dict(view_direction=_add_zero(self.player_view_directions["right"][i]),
+                                             move_direction=_add_zero(dir))) for i, (loc, dir) in enumerate(zip(obs['right_team'], obs['right_team_direction']))
                                    ]
       obj_lst.extend(right_player_list)
 
@@ -414,20 +414,20 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
       ball = _gobj(label="ball",
                    type="ball",
                    location=obs["ball"]-player_location,
-                   attr=dict(owned_team=obs["ball_owned_team"],
+                   attrs=dict(owned_team=obs["ball_owned_team"],
                              move_direction=obs["ball_direction"]))
 
       # update visibilities wrt player view radius
-      if self.player_view_radius != -1:
+      if self.po_player_view_radius != -1:
         for obj in obj_lst:
-          obj.is_visible = True if obj.distance <= self.player_view_radius else False
+          obj.is_visible = True if obj.distance <= self.po_player_view_radius else False
 
       # update visibilities wrt player view cone
       def _signed_angle(a, b):
         t = np.degrees(np.arctan2(a[0] * b[1] - b[0] * a[1], a[0] * a[1] + b[0] * b[1]))
         return (-(180 + t) if t < 0 else t)
 
-      def _is_visible(player_view_direction, rel_obj_location, view_cone_xy_opening, view_cone_z_opening):
+      def _is_visible(player_view_direction, rel_obj_location, po_view_cone_xy_opening, po_view_cone_z_opening):
         if np.linalg.norm(rel_obj_location) == 0.0:
             return True
 
@@ -449,7 +449,7 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
         obj.is_visible = _is_visible(player_view_direction, obj.location, self.view_cone_xy_opening, self.view_cone_z_opening)
 
       # update visibilities wrt occlusion
-      obj_dist_sorted = [o for o in obj_lst if o.is_visible and o.type=="player"].sort(key=lambda obj: obj.distance)
+      obj_dist_sorted = sorted([o for o in obj_lst if o.is_visible and o.type=="player"], key=lambda obj: obj.distance)
       while len(obj_dist_sorted) > 1:
         curr_obj = obj_dist_sorted[0]
         for obj in obj_dist_sorted[1:]:
@@ -457,22 +457,23 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
           if np.linalg.norm(curr_obj.location[:2]) == 0.0 or np.linalg.norm(curr_obj.location) == 0.0:
               continue
 
-          blocked_xy_angle = 2*np.degrees(np.arctan(self.player_width/np.linalg.norm(curr_obj.location[:2])))
-          blocked_z_angle = np.arctan(self.player_height/np.linalg.norm(curr_obj.location))
+          blocked_xy_angle = 2*np.degrees(np.arctan(self.po_player_width/np.linalg.norm(curr_obj.location[:2])))
+          blocked_z_angle = np.arctan(self.po_player_height/np.linalg.norm(curr_obj.location))
           obj.is_visible = not _is_visible(player_view_direction,
                                            obj.location,
                                            blocked_xy_angle,
+                                           blocked_xy_angle,
                                            blocked_z_angle)
-          # update
-          obj_dist_sorted = [o for o in obj_dist_sorted if o.is_visible]
+        # update
+        obj_dist_sorted = [o for o in obj_dist_sorted[1:] if o.is_visible]
 
       # noise visible object coordinates according to their distance
-      if self.depth_noise is not None:
+      if self.po_depth_noise is not None:
         visible_objs = [obj for obj in obj_lst if obj.is_visible]
         for obj in visible_objs:
-          if self.depth_noise.get("type", None) == "gaussian":
-            if self.depth_noise.get("attenuation_type", None) == "fixed_angular_resolution":
-              angular_resolution = self.depth_noise.get("angular_resolution_degrees", 2) * np.pi / 180.0
+          if self.po_depth_noise.get("type", None) == "gaussian":
+            if self.po_depth_noise.get("attenuation_type", None) == "fixed_angular_resolution":
+              angular_resolution = self.po_depth_noise.get("angular_resolution_degrees", 2) * np.pi / 180.0
               sigma = obj.distance * angular_resolution
               # noise relevant quantities
               obj.location += np.random.normal(0, sigma, (3,))
