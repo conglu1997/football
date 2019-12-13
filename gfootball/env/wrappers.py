@@ -404,7 +404,7 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
                            type='player',
                            location=_add_zero(loc)-player_location,
                            attrs=dict(view_direction=_add_zero(self.player_view_directions['left'][i]),
-                                     move_direction=_add_zero(dir)) for i, (loc, dir) in enumerate(zip(obs['left_team'], obs['left_team_direction']))
+                                     move_direction=_add_zero(dir))) for i, (loc, dir) in enumerate(zip(obs['left_team'], obs['left_team_direction']))
                            ]
       obj_lst.extend(left_player_list)
 
@@ -434,7 +434,7 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
         t = np.degrees(np.arctan2(a[0] * b[1] - b[0] * a[1], a[0] * a[1] + b[0] * b[1]))
         return (-(180 + t) if t < 0 else t)
 
-      def _is_visible(player_view_direction, rel_obj_location, po_view_cone_xy_opening, po_view_cone_z_opening):
+      def _is_visible(player_view_direction, rel_obj_location, view_cone_xy_opening, view_cone_z_opening):
         if np.linalg.norm(rel_obj_location) == 0.0:
             return True
 
