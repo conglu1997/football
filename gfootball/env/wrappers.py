@@ -275,7 +275,7 @@ class FrameStack(gym.Wrapper):
   def _get_observation(self):
     return np.concatenate(list(self.obs), axis=-1)
 
-class MAPOSimple115StateWrapper(gym.ObservationWrapper):
+class MAPOListStateWrapper(gym.ObservationWrapper):
   """A wrapper that converts an observation to 115-features state.
 
      Each Observation is converted to coordinates relative to the respective player's absolute position (ego-frame)

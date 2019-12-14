@@ -16,7 +16,7 @@ found at the [PyMARL integration repository](https://github.com/schroederdewitt/
 To use without PyMARL, use the following options with create_environment():
 
 ```shell
-representation=mapo115simple  # list-based partial observability wrapper
+representation=ma_po_list  # list-based partial observability wrapper
 ```
 
 Default partial observability options:
