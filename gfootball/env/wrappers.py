@@ -437,7 +437,17 @@ class MAPOListStateWrapper(gym.ObservationWrapper):
         t = np.degrees(np.arctan2(a[0] * b[1] - b[0] * a[1], a[0] * a[1] + b[0] * b[1]))
         return (-(180 + t) if t < 0 else t)
 
-      def _is_visible(player_view_direction, rel_obj_location, view_cone_xy_opening, view_cone_z_opening):
+      def _is_in_rectangular_view_cone(player_view_direction, rel_obj_location, view_cone_xy_opening, view_cone_z_opening):
+        """
+        Checks whether rel_obj_location is within a view cone with rectangular cross-section emanating from
+        grid origin into direction player_view_direction.
+
+        TODO: This is not a proper elliptical view cone. To calculate the latter, this routine should be replaced
+        by a function that projects rel_obj_location perpendicularly onto the line through origin along
+        player_view_direction and then check whether the projection vector within the perpendicular plane falls
+        within the appropriately rescaled elliptical view cone cross-section.
+        TODO: Ideally, view cone should emanate from head height, not floor.
+        """
         if np.linalg.norm(rel_obj_location) == 0.0:
             return True
 
@@ -456,7 +466,10 @@ class MAPOListStateWrapper(gym.ObservationWrapper):
         return True
 
       for obj in obj_lst:
-        obj.is_visible = _is_visible(player_view_direction, obj.location, self.po_view_cone_xy_opening, self.po_view_cone_z_opening)
+        obj.is_visible = _is_in_rectangular_view_cone(player_view_direction,
+                                                      obj.location,
+                                                      self.po_view_cone_xy_opening,
+                                                      self.po_view_cone_z_opening)
 
       # update visibilities wrt occlusion
       obj_dist_sorted = sorted([o for o in obj_lst if o.is_visible and o.type=='player'], key=lambda obj: obj.distance)
@@ -469,10 +482,10 @@ class MAPOListStateWrapper(gym.ObservationWrapper):
 
           blocked_xy_angle = 2*np.degrees(np.arctan(self.po_player_width/np.linalg.norm(curr_obj.location[:2])))
           blocked_z_angle = np.arctan(self.po_player_height/np.linalg.norm(curr_obj.location))
-          obj.is_visible = not _is_visible(player_view_direction,
-                                           obj.location,
-                                           blocked_xy_angle,
-                                           blocked_z_angle)
+          obj.is_visible = not _is_in_rectangular_view_cone(player_view_direction,
+                                                            obj.location,
+                                                            blocked_xy_angle,
+                                                            blocked_z_angle)
         # update
         obj_dist_sorted = [o for o in obj_dist_sorted[1:] if o.is_visible]
 
