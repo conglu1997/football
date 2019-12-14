@@ -333,11 +333,11 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
 
     obs = observation[0]
     for player_id in range(n_left_players):
-        if np.sum(obs["left_team_direction"]) != 0.0:
+        if np.linalg.norm(obs["left_team_direction"][player_id]) != 0.0:
             self.player_view_directions["left"][player_id] = obs["left_team_direction"][player_id] / \
                                                              np.linalg.norm(obs["left_team_direction"][player_id])
     for player_id in range(n_right_players):
-        if np.sum(obs["right_team_direction"]) != 0.0:
+        if np.linalg.norm(obs["right_team_direction"][player_id]) != 0.0:
             self.player_view_directions["right"][player_id] = obs["right_team_direction"][player_id] / \
                                                               np.linalg.norm(obs["right_team_direction"][player_id])
 
@@ -423,6 +423,7 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
                    location=obs['ball']-player_location,
                    attrs=dict(owned_team=obs['ball_owned_team'],
                              move_direction=obs['ball_direction']))
+      obj_lst.extend([ball])
 
       # update visibilities wrt player view radius
       if self.po_player_view_radius != -1:
