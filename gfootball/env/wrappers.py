@@ -115,6 +115,8 @@ class Simple115StateWrapper(gym.ObservationWrapper):
     return np.array(final_obs, dtype=np.float32)
 
 
+
+
 class PixelsStateWrapper(gym.ObservationWrapper):
   """A wrapper that extracts pixel representation."""
 
@@ -500,3 +502,7 @@ class MAPOListStateWrapper(gym.ObservationWrapper):
       final_obs.append(o)
 
     return np.array(final_obs, dtype=np.float32)
+
+  def reset(self):
+    self.player_view_directions = None
+    return self.env.reset()
