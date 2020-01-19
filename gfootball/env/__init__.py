@@ -149,14 +149,14 @@ def create_environment(env_name='',
   elif representation == 'simple115':
     env = wrappers.Simple115StateWrapper(env)
   elif representation == 'ma_po_list':
-    env = wrappers.MAPOListStateWrapper(env,
-                                         po_view_cone_xy_opening,
-                                         po_view_cone_z_opening,
-                                         po_player_width,
-                                         po_player_height,
-                                         po_player_view_radius,
-                                         po_depth_noise
-                                         )
+    env = wrappers.MAPOSimple115StateWrapper(env,
+                                             po_view_cone_xy_opening,
+                                             po_view_cone_z_opening,
+                                             po_player_width,
+                                             po_player_height,
+                                             po_player_view_radius,
+                                             po_depth_noise
+                                             )
   elif representation == 'extracted':
     env = wrappers.SMMWrapper(env, channel_dimensions)
   else:
