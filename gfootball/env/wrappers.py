@@ -309,6 +309,12 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
         self.observation_space = gym.spaces.Box(
             low=-1, high=1, shape=shape, dtype=np.float32)
 
+        # Set player view directions to players facing forward at the beginning
+        self.player_view_directions = {"left": np.zeros((n_right_players, 2)),
+                                       "right": np.zeros((n_right_players, 2))}
+        self.player_view_directions["left"][:, 0] = 1
+        self.player_view_directions["right"][:, 0] = -1
+
     def observation(self, observation):
         """Converts an observation into simple115 format.
 
@@ -320,9 +326,6 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
       being controlled.
     """
 
-        n_left_players = len(observation[0]["left_team"])
-        n_right_players = len(observation[0]["right_team"])
-
         render_points = True
         fig, axes = None, None
         if render_points:
@@ -330,17 +333,11 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
             fig, axes = plt.subplots(nrows=len(observation), ncols=6, figsize=(30, 2.1))
             # gfig, gaxes = plt.subplots(nrows=len(observation), ncols=3)
 
-        # initialise / update player view directions
-        player_view_directions = getattr(self, "player_view_directions", None)
-        if player_view_directions is None:
-            # set player view directions to players facing forward at the beginning
-            self.player_view_directions = {}
-            self.player_view_directions["right"] = np.zeros((n_right_players, 2))
-            self.player_view_directions["right"][:, 0] = -1
-            self.player_view_directions["left"] = np.zeros((n_left_players, 2))
-            self.player_view_directions["left"][:, 0] = 1
-
         obs = observation[0]
+        n_left_players = len(obs["left_team"])
+        n_right_players = len(obs["right_team"])
+
+        # Normalise rows for view directions
         for player_id in range(n_left_players):
             if np.linalg.norm(obs["left_team_direction"][player_id]) != 0.0:
                 self.player_view_directions["left"][player_id] = obs["left_team_direction"][player_id] / \
@@ -359,35 +356,28 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
                 self.label = label
                 self.type = type
                 self.raw_obs = raw_obs
-                self.location = location
+                self.relative_location = location
                 self.distance = np.linalg.norm(location)
                 self.attrs = attrs
                 self.is_visible = True
 
             def rep(self):
-                lst = []
-                lst.extend([1.0 if self.is_visible else 0.0])
-
-                if self.type in ['player']:
-                    if self.is_visible:
-                        lst.extend(self.location[:2])
+                if self.is_visible:
+                    lst = [1.0]
+                    if self.type in ['player']:
+                        # TODO: Should the same norm be used for both? Length of zeros incorrect, changed to 5.
+                        lst.extend(self.relative_location[:2])
                         norm = np.linalg.norm(self.attrs['view_direction'])
                         if norm != 0.0:
                             lst.extend([self.attrs['move_direction'][0] / norm,
                                         self.attrs['move_direction'][1] / norm,
                                         norm])
-                        else:
-                            lst.extend([0] * 2)
-                        norm = np.linalg.norm(self.attrs['view_direction'])
-                        if norm != 0.0:
+
                             lst.extend([self.attrs['view_direction'][0] / norm,
                                         self.attrs['view_direction'][1] / norm])
                         else:
-                            lst.extend([0, 0])
-                    else:
-                        lst.extend([0] * 7)
-                elif self.type in ['ball']:
-                    if self.is_visible:
+                            lst.extend([0] * 5)
+                    elif self.type in ['ball']:
                         norm = np.linalg.norm(self.attrs['move_direction'])
                         xy_norm = np.linalg.norm(self.attrs['move_direction'][:2])
                         if norm != 0.0 and xy_norm != 0.0:
@@ -398,10 +388,9 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
                         else:
                             lst.extend([0] * 4)
                         lst.extend({-1: [1, 0, 0], 0: [0, 1, 0], 1: [0, 0, 1]}[self.attrs['owned_team']])
-                    else:
-                        lst.extend([0] * 7)
-
-                return lst
+                    return lst
+                else:
+                    return [0] * 8
 
         final_obs = []
         for player_id, obs in enumerate(observation):
@@ -409,7 +398,7 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
             player_view_direction = _add_zero(self.player_view_directions['left'][player_id])
             obj_lst = []
 
-            # encapsulate left players
+            # Encapsulate players and ball
             left_player_list = [_gobj(label='left_player__{}'.format(i),
                                       type='player',
                                       raw_obs={"left_team": loc, "left_team_direction": dir},
@@ -419,8 +408,6 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
                                 enumerate(zip(obs['left_team'], obs['left_team_direction']))
                                 ]
             obj_lst.extend(left_player_list)
-
-            # encapsulate right players
             right_player_list = [_gobj(label='right_player__{}'.format(i),
                                        type='player',
                                        raw_obs={"right_team": loc, "right_team_direction": dir},
@@ -430,27 +417,26 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
                                  enumerate(zip(obs['right_team'], obs['right_team_direction']))
                                  ]
             obj_lst.extend(right_player_list)
-
-            # encapsulate ball
             ball = _gobj(label='ball',
                          type='ball',
                          raw_obs={"ball": obs["ball"], "ball_direction": obs['ball_direction']},
                          location=obs['ball'] - player_location,
                          attrs=dict(owned_team=obs['ball_owned_team'],
                                     move_direction=obs['ball_direction']))
-            obj_lst.extend([ball])
+            obj_lst.append(ball)
 
             # update visibilities wrt player view radius
             if self.po_player_view_radius != -1:
                 for obj in obj_lst:
-                    obj.is_visible = True if obj.distance <= self.po_player_view_radius else False
+                    if obj.distance > self.po_player_view_radius:
+                        obj.is_visible = False
 
             # update visibilities wrt player view cone
-            def _signed_angle(a, b):
-                t = np.degrees(np.arctan2(a[0] * b[1] - b[0] * a[1], a[0] * a[1] + b[0] * b[1]))
-                return (-(180 + t) if t < 0 else t)
-
             def _is_visible(player_view_direction, rel_obj_location, view_cone_xy_opening, view_cone_z_opening):
+                def _signed_angle(a, b):
+                    t = np.degrees(np.arctan2(a[0] * b[1] - b[0] * a[1], a[0] * a[1] + b[0] * b[1]))
+                    return -(180 + t) if t < 0 else t
+
                 if np.linalg.norm(rel_obj_location) == 0.0:
                     return True
 
@@ -470,15 +456,18 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
                 return True
 
             for obj in obj_lst:
-                obj.is_visible = _is_visible(player_view_direction, obj.location, self.po_view_cone_xy_opening,
-                                             self.po_view_cone_z_opening)
+                # make sure to not reset visible status
+                if obj.is_visible:
+                    obj.is_visible = _is_visible(player_view_direction, obj.location, self.po_view_cone_xy_opening,
+                                                 self.po_view_cone_z_opening)
 
             # update visibilities wrt occlusion
             obj_dist_sorted = sorted([o for o in obj_lst if o.is_visible and o.type == 'player'],
                                      key=lambda obj: obj.distance)
             while len(obj_dist_sorted) > 1:
-                curr_obj = obj_dist_sorted[0]
-                for obj in obj_dist_sorted[1:]:
+                curr_obj, obj_dist_sorted = obj_dist_sorted[0], obj_dist_sorted[1:]
+
+                for obj in obj_dist_sorted:
                     # relative location wrt curr_obj
                     if np.linalg.norm(curr_obj.location[:2]) == 0.0 or np.linalg.norm(curr_obj.location) == 0.0:
                         continue
@@ -490,8 +479,8 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
                                                      obj.location,
                                                      blocked_xy_angle,
                                                      blocked_z_angle)
-                # update
-                obj_dist_sorted = [o for o in obj_dist_sorted[1:] if o.is_visible]
+
+                obj_dist_sorted = [o for o in obj_dist_sorted if o.is_visible]
 
             # noise visible object coordinates according to their distance
             if self.po_depth_noise is not None:
@@ -718,7 +707,7 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
             plt.legend()
             plt.show()
 
-        final_obs = np.array(final_obs, dtype=np.float32)
-        if np.any(np.isnan(final_obs)) or np.any(np.isinf(final_obs)):
-            a = 5
+        # Ensure all numbers sensible
+        final_obs = np.nan_to_num(np.array(final_obs, dtype=np.float32))
+
         return final_obs
