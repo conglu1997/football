@@ -276,14 +276,14 @@ class FrameStack(gym.Wrapper):
         return np.concatenate(list(self.obs), axis=-1)
 
 
-class MAPOSimple115StateWrapper(gym.ObservationWrapper):
-    """A wrapper that converts an observation to 115-features state.
+class MAPOListStateWrapper(gym.ObservationWrapper):
+    """A wrapper that converts an observation to TODO: *insert number here*-features state.
 
      Each Observation is converted to coordinates relative to the respective player's absolute position (ego-frame)
 
      In addition, each observation is modified so as to respect partial observability constraints resulting
      from:
-      - restricted view cone
+      - restricted view wedge (xy direction)
       - depth noise
       - view obstruction
   """
@@ -291,72 +291,255 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
     def __init__(self,
                  env,
                  po_view_cone_xy_opening=160,
-                 po_view_cone_z_opening=70,
                  po_player_width=0.060,
-                 po_player_height=0.033,
                  po_player_view_radius=-1,
-                 po_depth_noise='default'):
+                 po_depth_noise='default',
+                 render_points=True):
         gym.ObservationWrapper.__init__(self, env)
         self.po_view_cone_xy_opening = po_view_cone_xy_opening
-        self.po_view_cone_z_opening = po_view_cone_z_opening
         self.po_player_width = po_player_width
-        self.po_player_height = po_player_height
+        # Fixed view radius almost never used.
         self.po_player_view_radius = po_player_view_radius
         self.po_depth_noise = {'type': 'gaussian', 'sigma': 0.1, 'attenuation_type': 'fixed_angular_resolution',
                                'angular_resolution_degrees': 0.2} \
             if po_depth_noise == 'default' else po_depth_noise
-        shape = (self.env.unwrapped._config.number_of_players_agent_controls(), 115)
+        self.number_of_players_controlled = self.env.unwrapped._config.number_of_players_agent_controls()
         self.observation_space = gym.spaces.Box(
-            low=-1, high=1, shape=shape, dtype=np.float32)
+            low=-1, high=1, shape=(self.number_of_players_controlled, 115), dtype=np.float32)
+        # Assign on first observation, right player detection doesn't work properly
+        self.n_left_players = 0
+        self.n_right_players = 0
+        self.player_view_directions = {}
 
-        # Set player view directions to players facing forward at the beginning
-        self.player_view_directions = {"left": np.zeros((n_right_players, 2)),
-                                       "right": np.zeros((n_right_players, 2))}
-        self.player_view_directions["left"][:, 0] = 1
-        self.player_view_directions["right"][:, 0] = -1
+        self.render_points = render_points
 
-    def observation(self, observation):
-        """Converts an observation into simple115 format.
+    def _plot_points(self, obj_lists):
+        import matplotlib.pyplot as plt
 
-    Args:
-      observation: observation that the environment returns
+        fig, axes = plt.subplots(nrows=self.number_of_players_controlled, ncols=6, figsize=(30, 2.1))
 
-    Returns:
-      (N, 115) shaped representation, where N stands for the number of players
-      being controlled.
-    """
+        for player_id, obj_lst in enumerate(obj_lists):
+            # render scene in matplotlib
+            paxis = axes[player_id] if self.number_of_players_controlled > 1 else axes
 
-        render_points = True
-        fig, axes = None, None
-        if render_points:
-            import matplotlib.pyplot as plt
-            fig, axes = plt.subplots(nrows=len(observation), ncols=6, figsize=(30, 2.1))
-            # gfig, gaxes = plt.subplots(nrows=len(observation), ncols=3)
+            # plot whether objects are set to visible for each agent
+            x, y, z = list(zip(*[obj.raw_obs['right_team'].tolist() + [0.0] for obj in obj_lst if
+                                 obj.label[:12] == 'right_player']))
+            paxis[0].scatter(x, y, color=(1.0, 0.8, 0.8))
+            paxis[1].scatter(x, z, color=(1.0, 0.8, 0.8))
+            paxis[2].scatter(y, z, color=(1.0, 0.8, 0.8))
+            u, v, w = list(zip(
+                *[obj.raw_obs['right_team_direction'].tolist() + [0.0] for obj in obj_lst if
+                  obj.label[:12] == 'right_player']))
+            paxis[0].quiver(x, y, u, v, color=(1.0, 0.8, 0.8))
+            paxis[1].quiver(x, z, u, w, color=(1.0, 0.8, 0.8))
+            paxis[2].quiver(y, z, v, w, color=(1.0, 0.8, 0.8))
 
-        obs = observation[0]
-        n_left_players = len(obs["left_team"])
-        n_right_players = len(obs["right_team"])
+            x, y, z = list(zip(
+                *[obj.raw_obs['left_team'].tolist() + [0.0] for obj in obj_lst if obj.label[:11] == 'left_player']))
+            paxis[0].scatter(x, y, color=(0.8, 1.0, 0.8))
+            paxis[1].scatter(x, z, color=(0.8, 1.0, 0.8))
+            paxis[2].scatter(y, z, color=(0.8, 1.0, 0.8))
+            u, v, w = list(zip(
+                *[obj.raw_obs['left_team_direction'].tolist() + [0.0] for obj in obj_lst if
+                  obj.label[:11] == 'left_player']))
+            paxis[0].quiver(x, y, u, v, color=(0.8, 1.0, 0.8))
+            paxis[1].quiver(x, z, u, w, color=(0.8, 1.0, 0.8))
+            paxis[2].quiver(y, z, v, w, color=(0.8, 1.0, 0.8))
 
-        # Normalise rows for view directions
-        for player_id in range(n_left_players):
-            if np.linalg.norm(obs["left_team_direction"][player_id]) != 0.0:
-                self.player_view_directions["left"][player_id] = obs["left_team_direction"][player_id] / \
-                                                                 np.linalg.norm(obs["left_team_direction"][player_id])
-        for player_id in range(n_right_players):
-            if np.linalg.norm(obs["right_team_direction"][player_id]) != 0.0:
-                self.player_view_directions["right"][player_id] = obs["right_team_direction"][player_id] / \
-                                                                  np.linalg.norm(obs["right_team_direction"][player_id])
+            x, y, z = list(zip(*[obj.raw_obs['ball'].tolist() for obj in obj_lst if obj.type == 'ball']))
+            paxis[0].scatter(x, y, color=(0.8, 0.8, 1.0))
+            paxis[1].scatter(x, z, color=(0.8, 0.8, 1.0))
+            paxis[2].scatter(y, z, color=(0.8, 0.8, 1.0))
+            u, v, w = list(zip(
+                *[obj.raw_obs['ball_direction'].tolist() for obj in obj_lst if obj.type == 'ball']))
+            paxis[0].quiver(x, y, u, v, color=(0.8, 0.8, 1.0))
+            paxis[1].quiver(x, z, u, w, color=(0.8, 0.8, 1.0))
+            paxis[2].quiver(y, z, v, w, color=(0.8, 0.8, 1.0))
 
-        _add_zero = lambda vec: np.concatenate([vec, np.array([0])],
-                                               -1)  # helper function used to extend 2d to 3d coords
+            paxis[0].set_xlim(-(1 + 0.1), 1 + 0.1)
+            paxis[0].set_ylim(-(0.42 + 0.1), (0.42 + 0.1))
+            paxis[1].set_xlim(-(1 + 0.1), (1 + 0.1))
+            paxis[1].set_ylim(0 - 1, 10)
+            paxis[2].set_xlim(-(0.42 + 0.1), (0.42 + 0.1))
+            paxis[2].set_ylim(0 - 1, 10)
 
-        # encapsulate into objects
+            offset = 3
+            # plot local observations
+            x, y, z = list(zip(
+                *[(obj.location[0], obj.location[1], 0.0) for obj in obj_lst if obj.label[:12] == "right_player"]))
+            u, v, w = list(zip(
+                *[obj.attrs['view_direction'].tolist() for obj in obj_lst if obj.label[:12] == 'right_player']))
+            paxis[0 + offset].scatter(x, y, color=(1.0, 0.8, 0.8))
+            paxis[1 + offset].scatter(x, z, color=(1.0, 0.8, 0.8))
+            paxis[2 + offset].scatter(y, z, color=(1.0, 0.8, 0.8))
+            paxis[0 + offset].quiver(x, y, u, v, color=(1.0, 0.8, 0.8))
+            paxis[1 + offset].quiver(x, z, u, w, color=(1.0, 0.8, 0.8))
+            paxis[2 + offset].quiver(y, z, v, w, color=(1.0, 0.8, 0.8))
+
+            x, y, z = list(zip(
+                *[(obj.location[0], obj.location[1], 0.0) for obj in obj_lst if obj.label[:11] == "left_player"]))
+            u, v, w = list(zip(
+                *[obj.attrs['view_direction'].tolist() for obj in obj_lst if obj.label[:11] == 'left_player']))
+            paxis[0 + offset].scatter(x, y, color=(0.8, 1.0, 0.8))
+            paxis[1 + offset].scatter(x, z, color=(0.8, 1.0, 0.8))
+            paxis[2 + offset].scatter(y, z, color=(0.8, 1.0, 0.8))
+            paxis[0 + offset].quiver(x, y, u, v, color=(0.8, 1.0, 0.8))
+            paxis[1 + offset].quiver(x, z, u, w, color=(0.8, 1.0, 0.8))
+            paxis[2 + offset].quiver(y, z, v, w, color=(0.8, 1.0, 0.8))
+
+            x, y, z = list(zip(
+                *[(obj.location[0], obj.location[1], obj.location[2]) for obj in obj_lst if obj.type == "ball"]))
+            u, v, w = list(zip(
+                *[obj.attrs['move_direction'].tolist() for obj in obj_lst if obj.type == 'ball']))
+            paxis[0 + offset].scatter(x, y, color=(0.8, 0.8, 1.0))
+            paxis[1 + offset].scatter(x, z, color=(0.8, 0.8, 1.0))
+            paxis[2 + offset].scatter(y, z, color=(0.8, 0.8, 1.0))
+            paxis[0 + offset].quiver(x, y, u, v, color=(0.8, 0.8, 1.0))
+            paxis[1 + offset].quiver(x, z, u, w, color=(0.8, 0.8, 1.0))
+            paxis[2 + offset].quiver(y, z, v, w, color=(0.8, 0.8, 1.0))
+
+            # PLOT VISIBLE ONLY #
+
+            # plot whether objects are set to visible for each agent
+            lst = list(zip(*[obj.raw_obs['right_team'].tolist() + [0.0] for obj in obj_lst if
+                             obj.label[:12] == 'right_player' and obj.is_visible]))
+            if lst:
+                x, y, z = lst
+                paxis[0].scatter(x, y, color=(1.0, 0.1, 0.1))
+                paxis[1].scatter(x, z, color=(1.0, 0.1, 0.1))
+                paxis[2].scatter(y, z, color=(1.0, 0.1, 0.1))
+            lst = list(zip(
+                *[obj.raw_obs['right_team_direction'].tolist() + [0.0] for obj in obj_lst if
+                  obj.label[:12] == 'right_player' and obj.is_visible]))
+            if lst:
+                u, v, w = lst
+                paxis[0].quiver(x, y, u, v, color=(1.0, 0.1, 0.1))
+                paxis[1].quiver(x, z, u, w, color=(1.0, 0.1, 0.1))
+                paxis[2].quiver(y, z, v, w, color=(1.0, 0.1, 0.1))
+
+            lst = list(zip(*[obj.raw_obs['left_team'].tolist() + [0.0] for obj in obj_lst if
+                             obj.label[:11] == 'left_player' and obj.is_visible]))
+            if lst:
+                x, y, z = lst
+                paxis[0].scatter(x, y, color=(0.1, 1.0, 0.1))
+                paxis[1].scatter(x, z, color=(0.1, 1.0, 0.1))
+                paxis[2].scatter(y, z, color=(0.1, 1.0, 0.1))
+            lst = list(zip(
+                *[obj.raw_obs['left_team_direction'].tolist() + [0.0] for obj in obj_lst if
+                  obj.label[:11] == 'left_player' and obj.is_visible]))
+            if lst:
+                u, v, w = lst
+                paxis[0].quiver(x, y, u, v, color=(0.1, 1.0, 0.1))
+                paxis[1].quiver(x, z, u, w, color=(0.1, 1.0, 0.1))
+                paxis[2].quiver(y, z, v, w, color=(0.1, 1.0, 0.1))
+
+            lst = list(
+                zip(*[obj.raw_obs['ball'].tolist() for obj in obj_lst if obj.type == 'ball' and obj.is_visible]))
+            if lst:
+                x, y, z = lst
+                paxis[0].scatter(x, y, color=(0.1, 0.1, 1.0))
+                paxis[1].scatter(x, z, color=(0.1, 0.1, 1.0))
+                paxis[2].scatter(y, z, color=(0.1, 0.1, 1.0))
+            lst = list(zip(
+                *[obj.raw_obs['ball_direction'].tolist() for obj in obj_lst if
+                  obj.type == 'ball' and obj.is_visible]))
+            if lst:
+                u, v, w = lst
+                paxis[0].quiver(x, y, u, v, color=(0.1, 0.1, 1.0))
+                paxis[1].quiver(x, z, u, w, color=(0.1, 0.1, 1.0))
+                paxis[2].quiver(y, z, v, w, color=(0.1, 0.1, 1.0))
+
+            paxis[0].set_xlim(-(1 + 0.1), 1 + 0.1)
+            paxis[0].set_ylim(-(0.42 + 0.1), (0.42 + 0.1))
+            paxis[1].set_xlim(-(1 + 0.1), (1 + 0.1))
+            paxis[1].set_ylim(0 - 1, 10)
+            paxis[2].set_xlim(-(0.42 + 0.1), (0.42 + 0.1))
+            paxis[2].set_ylim(0 - 1, 10)
+
+            offset = 3
+            # plot local observations
+            lst = list(zip(*[(obj.location[0], obj.location[1], 0.0) for obj in obj_lst if
+                             obj.label[:12] == "right_player" and obj.is_visible]))
+            if lst:
+                x, y, z = lst
+            lst = list(zip(
+                *[obj.attrs['view_direction'].tolist() for obj in obj_lst if
+                  obj.label[:12] == 'right_player' and obj.is_visible]))
+            if lst:
+                u, v, w = lst
+            if lst:
+                paxis[0 + offset].scatter(x, y, color=(1.0, 0.1, 0.1))
+                paxis[1 + offset].scatter(x, z, color=(1.0, 0.1, 0.1))
+                paxis[2 + offset].scatter(y, z, color=(1.0, 0.1, 0.1))
+                paxis[0 + offset].quiver(x, y, u, v, color=(1.0, 0.1, 0.1))
+                paxis[1 + offset].quiver(x, z, u, w, color=(1.0, 0.1, 0.1))
+                paxis[2 + offset].quiver(y, z, v, w, color=(1.0, 0.1, 0.1))
+
+            lst = list(zip(*[(obj.location[0], obj.location[1], 0.0) for obj in obj_lst if
+                             obj.label[:11] == "left_player" and obj.is_visible]))
+            if lst:
+                x, y, z = lst
+            lst = list(zip(
+                *[obj.attrs['view_direction'].tolist() for obj in obj_lst if
+                  obj.label[:11] == 'left_player' and obj.is_visible]))
+            if lst:
+                u, v, w = lst
+            if lst:
+                paxis[0 + offset].scatter(x, y, color=(0.1, 1.0, 0.1))
+                paxis[1 + offset].scatter(x, z, color=(0.1, 1.0, 0.1))
+                paxis[2 + offset].scatter(y, z, color=(0.1, 1.0, 0.1))
+                paxis[0 + offset].quiver(x, y, u, v, color=(0.1, 1.0, 0.1))
+                paxis[1 + offset].quiver(x, z, u, w, color=(0.1, 1.0, 0.1))
+                paxis[2 + offset].quiver(y, z, v, w, color=(0.1, 1.0, 0.1))
+
+            lst = list(zip(*[(obj.location[0], obj.location[1], obj.location[2]) for obj in obj_lst if
+                             obj.type == "ball" and obj.is_visible]))
+            if lst:
+                x, y, z = lst
+            lst = list(zip(
+                *[obj.attrs['move_direction'].tolist() for obj in obj_lst if
+                  obj.type == 'ball' and obj.is_visible]))
+            if lst:
+                u, v, w = lst
+            if lst:
+                paxis[0 + offset].scatter(x, y, color=(0.1, 0.1, 1.0))
+                paxis[1 + offset].scatter(x, z, color=(0.1, 0.1, 1.0))
+                paxis[2 + offset].scatter(y, z, color=(0.1, 0.1, 1.0))
+                paxis[0 + offset].quiver(x, y, u, v, color=(0.1, 0.1, 1.0))
+                paxis[1 + offset].quiver(x, z, u, w, color=(0.1, 0.1, 1.0))
+                paxis[2 + offset].quiver(y, z, v, w, color=(0.1, 0.1, 1.0))
+
+        plt.legend()
+        plt.show()
+
+    # compute whether an object is in a given wedge (2d points)
+    @staticmethod
+    def _is_in_wedge(view_direction, rel_obj_location, view_cone_xy_opening):
+        def _signed_angle(a, b):
+            t = np.degrees(np.arctan2(a[0] * b[1] - b[0] * a[1], a[0] * a[1] + b[0] * b[1]))
+            return -(180 + t) if t < 0 else t
+
+        if np.linalg.norm(rel_obj_location) == 0.0:
+            return True
+
+        # Determine whether obj location is visible wrt view cone
+        if view_cone_xy_opening < 360:
+            rel_angle = _signed_angle(rel_obj_location[:2], view_direction[:2])
+            if (rel_angle < -view_cone_xy_opening // 2) or (rel_angle > view_cone_xy_opening // 2):
+                return False
+        return True
+
+    # Encapsulate players and ball
+    def _encapsulate_objects(self, obs, player_location):
         class _gobj():
-            def __init__(self, label, type, raw_obs, location, attrs):
+            def __init__(self, label, type, raw_obs, location, absolute_location, attrs):
                 self.label = label
                 self.type = type
                 self.raw_obs = raw_obs
-                self.relative_location = location
+                self.location = location
+                # Maybe just store player loc and add it.
+                self.absolute_location = absolute_location
                 self.distance = np.linalg.norm(location)
                 self.attrs = attrs
                 self.is_visible = True
@@ -365,8 +548,7 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
                 if self.is_visible:
                     lst = [1.0]
                     if self.type in ['player']:
-                        # TODO: Should the same norm be used for both? Length of zeros incorrect, changed to 5.
-                        lst.extend(self.relative_location[:2])
+                        lst.extend(self.location[:2])
                         norm = np.linalg.norm(self.attrs['view_direction'])
                         if norm != 0.0:
                             lst.extend([self.attrs['move_direction'][0] / norm,
@@ -378,6 +560,7 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
                         else:
                             lst.extend([0] * 5)
                     elif self.type in ['ball']:
+                        # TODO: the balls position is actually never added.
                         norm = np.linalg.norm(self.attrs['move_direction'])
                         xy_norm = np.linalg.norm(self.attrs['move_direction'][:2])
                         if norm != 0.0 and xy_norm != 0.0:
@@ -392,38 +575,82 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
                 else:
                     return [0] * 8
 
-        final_obs = []
-        for player_id, obs in enumerate(observation):
-            player_location = _add_zero(obs['left_team'][player_id])  # [x,y] of active player
-            player_view_direction = _add_zero(self.player_view_directions['left'][player_id])
-            obj_lst = []
+        left_player_list = [_gobj(label='left_player__{}'.format(i),
+                                  type='player',
+                                  raw_obs={"left_team": loc, "left_team_direction": dir},
+                                  location=self._add_zero(loc) - player_location,
+                                  absolute_location=self._add_zero(loc),
+                                  attrs=dict(view_direction=self._add_zero(self.player_view_directions['left'][i]),
+                                             move_direction=self._add_zero(dir))) for i, (loc, dir) in
+                            enumerate(zip(obs['left_team'], obs['left_team_direction']))
+                            ]
+        obj_lst = left_player_list
 
-            # Encapsulate players and ball
-            left_player_list = [_gobj(label='left_player__{}'.format(i),
-                                      type='player',
-                                      raw_obs={"left_team": loc, "left_team_direction": dir},
-                                      location=_add_zero(loc) - player_location,
-                                      attrs=dict(view_direction=_add_zero(self.player_view_directions['left'][i]),
-                                                 move_direction=_add_zero(dir))) for i, (loc, dir) in
-                                enumerate(zip(obs['left_team'], obs['left_team_direction']))
-                                ]
-            obj_lst.extend(left_player_list)
-            right_player_list = [_gobj(label='right_player__{}'.format(i),
-                                       type='player',
-                                       raw_obs={"right_team": loc, "right_team_direction": dir},
-                                       location=_add_zero(loc) - player_location,
-                                       attrs=dict(view_direction=_add_zero(self.player_view_directions['right'][i]),
-                                                  move_direction=_add_zero(dir))) for i, (loc, dir) in
-                                 enumerate(zip(obs['right_team'], obs['right_team_direction']))
-                                 ]
-            obj_lst.extend(right_player_list)
-            ball = _gobj(label='ball',
-                         type='ball',
-                         raw_obs={"ball": obs["ball"], "ball_direction": obs['ball_direction']},
-                         location=obs['ball'] - player_location,
-                         attrs=dict(owned_team=obs['ball_owned_team'],
-                                    move_direction=obs['ball_direction']))
-            obj_lst.append(ball)
+        right_player_list = [_gobj(label='right_player__{}'.format(i),
+                                   type='player',
+                                   raw_obs={"right_team": loc, "right_team_direction": dir},
+                                   location=self._add_zero(loc) - player_location,
+                                   absolute_location=self._add_zero(loc),
+                                   attrs=dict(view_direction=self._add_zero(self.player_view_directions['right'][i]),
+                                              move_direction=self._add_zero(dir))) for i, (loc, dir) in
+                             enumerate(zip(obs['right_team'], obs['right_team_direction']))
+                             ]
+        obj_lst.extend(right_player_list)
+
+        ball = _gobj(label='ball',
+                     type='ball',
+                     raw_obs={"ball": obs["ball"], "ball_direction": obs['ball_direction']},
+                     location=obs['ball'] - player_location,
+                     absolute_location=obs['ball'],
+                     attrs=dict(owned_team=obs['ball_owned_team'],
+                                move_direction=obs['ball_direction']))
+        obj_lst.append(ball)
+
+        return obj_lst
+
+    @staticmethod
+    def _add_zero(vec):
+        return np.concatenate([vec, np.array([0])], -1)
+
+    def observation(self, observation):
+        """Converts an observation into simple list format.
+
+    Args:
+      observation: observation that the environment returns
+
+    Returns:
+      (N, d) shaped representation, where N stands for the number of players
+      being controlled and d stands for the feature dimension.
+    """
+
+        # Normalise rows for view directions
+        obs = observation[0]
+
+        # self.env.unwrapped._config.number_of_right_players() doesn't work so we have to resort to this hack
+        if not self.player_view_directions:
+            self.n_left_players = len(obs["left_team"])
+            self.n_right_players = len(obs["right_team"])
+            self.player_view_directions = {"left": np.zeros((self.n_left_players, 2)),
+                                           "right": np.zeros((self.n_right_players, 2))}
+            self.player_view_directions["left"][:, 0] = 1
+            self.player_view_directions["right"][:, 0] = -1
+
+        for player_id in range(self.n_left_players):
+            if np.linalg.norm(obs["left_team_direction"][player_id]) != 0.0:
+                self.player_view_directions["left"][player_id] = obs["left_team_direction"][player_id] / \
+                                                                 np.linalg.norm(obs["left_team_direction"][player_id])
+        for player_id in range(self.n_right_players):
+            if np.linalg.norm(obs["right_team_direction"][player_id]) != 0.0:
+                self.player_view_directions["right"][player_id] = obs["right_team_direction"][player_id] / \
+                                                                  np.linalg.norm(obs["right_team_direction"][player_id])
+
+        final_obs = []
+        obj_lists = []
+        for player_id, obs in enumerate(observation):
+            player_location = self._add_zero(obs['left_team'][player_id])  # [x,y] of active player
+            player_view_direction = self._add_zero(self.player_view_directions['left'][player_id])
+
+            obj_lst = self._encapsulate_objects(obs, player_location)
 
             # update visibilities wrt player view radius
             if self.po_player_view_radius != -1:
@@ -431,35 +658,11 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
                     if obj.distance > self.po_player_view_radius:
                         obj.is_visible = False
 
-            # update visibilities wrt player view cone
-            def _is_visible(player_view_direction, rel_obj_location, view_cone_xy_opening, view_cone_z_opening):
-                def _signed_angle(a, b):
-                    t = np.degrees(np.arctan2(a[0] * b[1] - b[0] * a[1], a[0] * a[1] + b[0] * b[1]))
-                    return -(180 + t) if t < 0 else t
-
-                if np.linalg.norm(rel_obj_location) == 0.0:
-                    return True
-
-                rel_angle = _signed_angle(rel_obj_location[:2], player_view_direction[:2])
-                rel_z_angle = np.arctan(rel_obj_location[2] / np.linalg.norm(rel_obj_location)) * 180.0 / np.pi if sum(
-                    rel_obj_location) != 0.0 else 0.0
-
-                # Determine whether obj location is visible wrt view cone
-                if view_cone_xy_opening < 360:
-                    if (rel_angle < -view_cone_xy_opening // 2) or (rel_angle > view_cone_xy_opening // 2):
-                        return False
-
-                if view_cone_z_opening < 90:
-                    if rel_z_angle > view_cone_z_opening:
-                        return False
-
-                return True
-
             for obj in obj_lst:
                 # make sure to not reset visible status
                 if obj.is_visible:
-                    obj.is_visible = _is_visible(player_view_direction, obj.location, self.po_view_cone_xy_opening,
-                                                 self.po_view_cone_z_opening)
+                    obj.is_visible = self._is_in_wedge(player_view_direction, obj.location,
+                                                       self.po_view_cone_xy_opening)
 
             # update visibilities wrt occlusion
             obj_dist_sorted = sorted([o for o in obj_lst if o.is_visible and o.type == 'player'],
@@ -474,11 +677,10 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
 
                     blocked_xy_angle = 2 * np.degrees(
                         np.arctan(self.po_player_width / np.linalg.norm(curr_obj.location[:2])))
-                    blocked_z_angle = np.arctan(self.po_player_height / np.linalg.norm(curr_obj.location))
-                    obj.is_visible = not _is_visible(player_view_direction,
-                                                     obj.location,
-                                                     blocked_xy_angle,
-                                                     blocked_z_angle)
+
+                    obj.is_visible = not self._is_in_wedge(player_view_direction,
+                                                           obj.location,
+                                                           blocked_xy_angle)
 
                 obj_dist_sorted = [o for o in obj_dist_sorted if o.is_visible]
 
@@ -503,209 +705,17 @@ class MAPOSimple115StateWrapper(gym.ObservationWrapper):
             for obj in obj_lst:
                 o.extend(obj.rep())
 
-            if render_points:
-                # render scene in matplotlib
-                paxis = axes[player_id] if len(observation) > 1 else axes
-                import matplotlib.pyplot as plt
-
-                # plot whether objects are set to visible for each agent
-                x, y, z = list(zip(*[obj.raw_obs['right_team'].tolist() + [0.0] for obj in obj_lst if
-                                     obj.label[:12] == 'right_player']))
-                paxis[0].scatter(x, y, color=(1.0, 0.8, 0.8))
-                paxis[1].scatter(x, z, color=(1.0, 0.8, 0.8))
-                paxis[2].scatter(y, z, color=(1.0, 0.8, 0.8))
-                u, v, w = list(zip(
-                    *[obj.raw_obs['right_team_direction'].tolist() + [0.0] for obj in obj_lst if
-                      obj.label[:12] == 'right_player']))
-                paxis[0].quiver(x, y, u, v, color=(1.0, 0.8, 0.8))
-                paxis[1].quiver(x, z, u, w, color=(1.0, 0.8, 0.8))
-                paxis[2].quiver(y, z, v, w, color=(1.0, 0.8, 0.8))
-
-                x, y, z = list(zip(
-                    *[obj.raw_obs['left_team'].tolist() + [0.0] for obj in obj_lst if obj.label[:11] == 'left_player']))
-                paxis[0].scatter(x, y, color=(0.8, 1.0, 0.8))
-                paxis[1].scatter(x, z, color=(0.8, 1.0, 0.8))
-                paxis[2].scatter(y, z, color=(0.8, 1.0, 0.8))
-                u, v, w = list(zip(
-                    *[obj.raw_obs['left_team_direction'].tolist() + [0.0] for obj in obj_lst if
-                      obj.label[:11] == 'left_player']))
-                paxis[0].quiver(x, y, u, v, color=(0.8, 1.0, 0.8))
-                paxis[1].quiver(x, z, u, w, color=(0.8, 1.0, 0.8))
-                paxis[2].quiver(y, z, v, w, color=(0.8, 1.0, 0.8))
-
-                x, y, z = list(zip(*[obj.raw_obs['ball'].tolist() for obj in obj_lst if obj.type == 'ball']))
-                paxis[0].scatter(x, y, color=(0.8, 0.8, 1.0))
-                paxis[1].scatter(x, z, color=(0.8, 0.8, 1.0))
-                paxis[2].scatter(y, z, color=(0.8, 0.8, 1.0))
-                u, v, w = list(zip(
-                    *[obj.raw_obs['ball_direction'].tolist() for obj in obj_lst if obj.type == 'ball']))
-                paxis[0].quiver(x, y, u, v, color=(0.8, 0.8, 1.0))
-                paxis[1].quiver(x, z, u, w, color=(0.8, 0.8, 1.0))
-                paxis[2].quiver(y, z, v, w, color=(0.8, 0.8, 1.0))
-
-                paxis[0].set_xlim(-(1 + 0.1), 1 + 0.1)
-                paxis[0].set_ylim(-(0.42 + 0.1), (0.42 + 0.1))
-                paxis[1].set_xlim(-(1 + 0.1), (1 + 0.1))
-                paxis[1].set_ylim(0 - 1, 10)
-                paxis[2].set_xlim(-(0.42 + 0.1), (0.42 + 0.1))
-                paxis[2].set_ylim(0 - 1, 10)
-
-                offset = 3
-                # plot local observations
-                x, y, z = list(zip(
-                    *[(obj.location[0], obj.location[1], 0.0) for obj in obj_lst if obj.label[:12] == "right_player"]))
-                u, v, w = list(zip(
-                    *[obj.attrs['view_direction'].tolist() for obj in obj_lst if obj.label[:12] == 'right_player']))
-                paxis[0 + offset].scatter(x, y, color=(1.0, 0.8, 0.8))
-                paxis[1 + offset].scatter(x, z, color=(1.0, 0.8, 0.8))
-                paxis[2 + offset].scatter(y, z, color=(1.0, 0.8, 0.8))
-                paxis[0 + offset].quiver(x, y, u, v, color=(1.0, 0.8, 0.8))
-                paxis[1 + offset].quiver(x, z, u, w, color=(1.0, 0.8, 0.8))
-                paxis[2 + offset].quiver(y, z, v, w, color=(1.0, 0.8, 0.8))
-
-                x, y, z = list(zip(
-                    *[(obj.location[0], obj.location[1], 0.0) for obj in obj_lst if obj.label[:11] == "left_player"]))
-                u, v, w = list(zip(
-                    *[obj.attrs['view_direction'].tolist() for obj in obj_lst if obj.label[:11] == 'left_player']))
-                paxis[0 + offset].scatter(x, y, color=(0.8, 1.0, 0.8))
-                paxis[1 + offset].scatter(x, z, color=(0.8, 1.0, 0.8))
-                paxis[2 + offset].scatter(y, z, color=(0.8, 1.0, 0.8))
-                paxis[0 + offset].quiver(x, y, u, v, color=(0.8, 1.0, 0.8))
-                paxis[1 + offset].quiver(x, z, u, w, color=(0.8, 1.0, 0.8))
-                paxis[2 + offset].quiver(y, z, v, w, color=(0.8, 1.0, 0.8))
-
-                x, y, z = list(zip(
-                    *[(obj.location[0], obj.location[1], obj.location[2]) for obj in obj_lst if obj.type == "ball"]))
-                u, v, w = list(zip(
-                    *[obj.attrs['move_direction'].tolist() for obj in obj_lst if obj.type == 'ball']))
-                paxis[0 + offset].scatter(x, y, color=(0.8, 0.8, 1.0))
-                paxis[1 + offset].scatter(x, z, color=(0.8, 0.8, 1.0))
-                paxis[2 + offset].scatter(y, z, color=(0.8, 0.8, 1.0))
-                paxis[0 + offset].quiver(x, y, u, v, color=(0.8, 0.8, 1.0))
-                paxis[1 + offset].quiver(x, z, u, w, color=(0.8, 0.8, 1.0))
-                paxis[2 + offset].quiver(y, z, v, w, color=(0.8, 0.8, 1.0))
-
-                ##############################################################################################################
-                ############################## PLOT VISIBLE ONLY #############################################################
-                ##############################################################################################################
-
-                # plot whether objects are set to visible for each agent
-                lst = list(zip(*[obj.raw_obs['right_team'].tolist() + [0.0] for obj in obj_lst if
-                                 obj.label[:12] == 'right_player' and obj.is_visible]))
-                if lst:
-                    x, y, z = lst
-                    paxis[0].scatter(x, y, color=(1.0, 0.1, 0.1))
-                    paxis[1].scatter(x, z, color=(1.0, 0.1, 0.1))
-                    paxis[2].scatter(y, z, color=(1.0, 0.1, 0.1))
-                lst = list(zip(
-                    *[obj.raw_obs['right_team_direction'].tolist() + [0.0] for obj in obj_lst if
-                      obj.label[:12] == 'right_player' and obj.is_visible]))
-                if lst:
-                    u, v, w = lst
-                    paxis[0].quiver(x, y, u, v, color=(1.0, 0.1, 0.1))
-                    paxis[1].quiver(x, z, u, w, color=(1.0, 0.1, 0.1))
-                    paxis[2].quiver(y, z, v, w, color=(1.0, 0.1, 0.1))
-
-                lst = list(zip(*[obj.raw_obs['left_team'].tolist() + [0.0] for obj in obj_lst if
-                                 obj.label[:11] == 'left_player' and obj.is_visible]))
-                if lst:
-                    x, y, z = lst
-                    paxis[0].scatter(x, y, color=(0.1, 1.0, 0.1))
-                    paxis[1].scatter(x, z, color=(0.1, 1.0, 0.1))
-                    paxis[2].scatter(y, z, color=(0.1, 1.0, 0.1))
-                lst = list(zip(
-                    *[obj.raw_obs['left_team_direction'].tolist() + [0.0] for obj in obj_lst if
-                      obj.label[:11] == 'left_player' and obj.is_visible]))
-                if lst:
-                    u, v, w = lst
-                    paxis[0].quiver(x, y, u, v, color=(0.1, 1.0, 0.1))
-                    paxis[1].quiver(x, z, u, w, color=(0.1, 1.0, 0.1))
-                    paxis[2].quiver(y, z, v, w, color=(0.1, 1.0, 0.1))
-
-                lst = list(
-                    zip(*[obj.raw_obs['ball'].tolist() for obj in obj_lst if obj.type == 'ball' and obj.is_visible]))
-                if lst:
-                    x, y, z = lst
-                    paxis[0].scatter(x, y, color=(0.1, 0.1, 1.0))
-                    paxis[1].scatter(x, z, color=(0.1, 0.1, 1.0))
-                    paxis[2].scatter(y, z, color=(0.1, 0.1, 1.0))
-                lst = list(zip(
-                    *[obj.raw_obs['ball_direction'].tolist() for obj in obj_lst if
-                      obj.type == 'ball' and obj.is_visible]))
-                if lst:
-                    u, v, w = lst
-                    paxis[0].quiver(x, y, u, v, color=(0.1, 0.1, 1.0))
-                    paxis[1].quiver(x, z, u, w, color=(0.1, 0.1, 1.0))
-                    paxis[2].quiver(y, z, v, w, color=(0.1, 0.1, 1.0))
-
-                paxis[0].set_xlim(-(1 + 0.1), 1 + 0.1)
-                paxis[0].set_ylim(-(0.42 + 0.1), (0.42 + 0.1))
-                paxis[1].set_xlim(-(1 + 0.1), (1 + 0.1))
-                paxis[1].set_ylim(0 - 1, 10)
-                paxis[2].set_xlim(-(0.42 + 0.1), (0.42 + 0.1))
-                paxis[2].set_ylim(0 - 1, 10)
-
-                offset = 3
-                # plot local observations
-                lst = list(zip(*[(obj.location[0], obj.location[1], 0.0) for obj in obj_lst if
-                                 obj.label[:12] == "right_player" and obj.is_visible]))
-                if lst:
-                    x, y, z = lst
-                lst = list(zip(
-                    *[obj.attrs['view_direction'].tolist() for obj in obj_lst if
-                      obj.label[:12] == 'right_player' and obj.is_visible]))
-                if lst:
-                    u, v, w = lst
-                if lst:
-                    paxis[0 + offset].scatter(x, y, color=(1.0, 0.1, 0.1))
-                    paxis[1 + offset].scatter(x, z, color=(1.0, 0.1, 0.1))
-                    paxis[2 + offset].scatter(y, z, color=(1.0, 0.1, 0.1))
-                    paxis[0 + offset].quiver(x, y, u, v, color=(1.0, 0.1, 0.1))
-                    paxis[1 + offset].quiver(x, z, u, w, color=(1.0, 0.1, 0.1))
-                    paxis[2 + offset].quiver(y, z, v, w, color=(1.0, 0.1, 0.1))
-
-                lst = list(zip(*[(obj.location[0], obj.location[1], 0.0) for obj in obj_lst if
-                                 obj.label[:11] == "left_player" and obj.is_visible]))
-                if lst:
-                    x, y, z = lst
-                lst = list(zip(
-                    *[obj.attrs['view_direction'].tolist() for obj in obj_lst if
-                      obj.label[:11] == 'left_player' and obj.is_visible]))
-                if lst:
-                    u, v, w = lst
-                if lst:
-                    paxis[0 + offset].scatter(x, y, color=(0.1, 1.0, 0.1))
-                    paxis[1 + offset].scatter(x, z, color=(0.1, 1.0, 0.1))
-                    paxis[2 + offset].scatter(y, z, color=(0.1, 1.0, 0.1))
-                    paxis[0 + offset].quiver(x, y, u, v, color=(0.1, 1.0, 0.1))
-                    paxis[1 + offset].quiver(x, z, u, w, color=(0.1, 1.0, 0.1))
-                    paxis[2 + offset].quiver(y, z, v, w, color=(0.1, 1.0, 0.1))
-
-                lst = list(zip(*[(obj.location[0], obj.location[1], obj.location[2]) for obj in obj_lst if
-                                 obj.type == "ball" and obj.is_visible]))
-                if lst:
-                    x, y, z = lst
-                lst = list(zip(
-                    *[obj.attrs['move_direction'].tolist() for obj in obj_lst if
-                      obj.type == 'ball' and obj.is_visible]))
-                if lst:
-                    u, v, w = lst
-                if lst:
-                    paxis[0 + offset].scatter(x, y, color=(0.1, 0.1, 1.0))
-                    paxis[1 + offset].scatter(x, z, color=(0.1, 0.1, 1.0))
-                    paxis[2 + offset].scatter(y, z, color=(0.1, 0.1, 1.0))
-                    paxis[0 + offset].quiver(x, y, u, v, color=(0.1, 0.1, 1.0))
-                    paxis[1 + offset].quiver(x, z, u, w, color=(0.1, 0.1, 1.0))
-                    paxis[2 + offset].quiver(y, z, v, w, color=(0.1, 0.1, 1.0))
-
             game_mode = [0] * 7
             game_mode[obs['game_mode']] = 1
             o.extend(game_mode)
             final_obs.append(o)
 
-        if render_points:
-            plt.legend()
-            plt.show()
+            # save object representations if rendering, can remove this later once code trusted
+            if self.render_points:
+                obj_lists.append(obj_lst)
+
+        if self.render_points:
+            self._plot_points(obj_lists)
 
         # Ensure all numbers sensible
         final_obs = np.nan_to_num(np.array(final_obs, dtype=np.float32))
