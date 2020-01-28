@@ -5,7 +5,7 @@ Christian Schroeder de Witt (cs@robots.ox.ac.uk)
 Based on Google Research Football
 Modified to support multi-agent support with partial observability:
 
-- **view cone** (both xy and z angle)
+- **view cone** (xy angle)
 - player view **occlusion**
 - **depth noise** (fixed angular resolution)
 - **fixed view radius** (off by default)
@@ -22,9 +22,7 @@ representation=ma_po_list  # list-based partial observability wrapper
 Default partial observability options:
 
 - po_view_cone_xy_opening=160  # [0, 360], in degrees
-- po_view_cone_z_opening=70  # in degrees  # [0, 90], in degrees
 - po_player_width=0.060  # 1 unit ~= 180 feet, for occlusion calculations
-- po_player_height=0.033  # 1 unit ~= 180 feet, for occlusion calculations
 - po_player_view_radius=-1  # -1=unlimited view radius, otherwise 1 unit ~=180 feet
 - po_depth_noise='default'  # corresponds to visual angular resolution of 0.2 degrees, uses Gaussian noise
 

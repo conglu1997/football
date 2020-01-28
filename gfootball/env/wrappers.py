@@ -277,7 +277,7 @@ class FrameStack(gym.Wrapper):
 
 
 class MAPOListStateWrapper(gym.ObservationWrapper):
-    """A wrapper that converts an observation to TODO: *insert number here*-features state.
+    """A wrapper that converts an observation to 194-features state.
 
      Each Observation is converted to coordinates relative to the respective player's absolute position (ego-frame)
 
@@ -538,7 +538,7 @@ class MAPOListStateWrapper(gym.ObservationWrapper):
                 self.type = type
                 self.raw_obs = raw_obs
                 self.location = location
-                # Maybe just store player loc and add it.
+                # Absolute location, TODO: add a flag to change representation.
                 self.absolute_location = absolute_location
                 self.distance = np.linalg.norm(location)
                 self.attrs = attrs
@@ -619,8 +619,8 @@ class MAPOListStateWrapper(gym.ObservationWrapper):
       observation: observation that the environment returns
 
     Returns:
-      (N, d) shaped representation, where N stands for the number of players
-      being controlled and d stands for the feature dimension.
+      (N, 194) shaped representation, where N stands for the number of players
+      being controlled and 194 is the feature dimension.
     """
 
         # Normalise rows for view directions
@@ -704,6 +704,10 @@ class MAPOListStateWrapper(gym.ObservationWrapper):
             o = []
             for obj in obj_lst:
                 o.extend(obj.rep())
+
+            # Add in personal absolute location and tiredness.
+            o.extend(player_location[:2])
+            o.append(obs['left_team_tired_factor'][player_id])
 
             game_mode = [0] * 7
             game_mode[obs['game_mode']] = 1
