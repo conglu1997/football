@@ -277,7 +277,7 @@ class FrameStack(gym.Wrapper):
 
 
 class MAPOListStateWrapper(gym.ObservationWrapper):
-    """A wrapper that converts an observation to 194-features state.
+    """A wrapper that converts an observation to 197-features state.
 
      Each Observation is converted to coordinates relative to the respective player's absolute position (ego-frame)
 
@@ -533,22 +533,26 @@ class MAPOListStateWrapper(gym.ObservationWrapper):
     # Encapsulate players and ball
     def _encapsulate_objects(self, obs, player_location):
         class _gobj():
-            def __init__(self, label, type, raw_obs, location, absolute_location, attrs):
+            def __init__(self, label, type, raw_obs, location, absolute_location, attrs, use_absolute_location=False):
                 self.label = label
                 self.type = type
                 self.raw_obs = raw_obs
                 self.location = location
-                # Absolute location, TODO: add a flag to change representation.
-                self.absolute_location = absolute_location
                 self.distance = np.linalg.norm(location)
                 self.attrs = attrs
                 self.is_visible = True
+                # By default, use relative location
+                self.use_absolute_location = use_absolute_location
+                self.absolute_location = absolute_location
 
             def rep(self):
                 if self.is_visible:
                     lst = [1.0]
                     if self.type in ['player']:
-                        lst.extend(self.location[:2])
+                        if self.use_absolute_location:
+                            lst.extend(self.absolute_location[:2])
+                        else:
+                            lst.extend(self.location[:2])
                         norm = np.linalg.norm(self.attrs['view_direction'])
                         if norm != 0.0:
                             lst.extend([self.attrs['move_direction'][0] / norm,
@@ -560,7 +564,10 @@ class MAPOListStateWrapper(gym.ObservationWrapper):
                         else:
                             lst.extend([0] * 5)
                     elif self.type in ['ball']:
-                        # TODO: the balls position is actually never added.
+                        if self.use_absolute_location:
+                            lst.extend(self.absolute_location)
+                        else:
+                            lst.extend(self.location)
                         norm = np.linalg.norm(self.attrs['move_direction'])
                         xy_norm = np.linalg.norm(self.attrs['move_direction'][:2])
                         if norm != 0.0 and xy_norm != 0.0:
@@ -570,7 +577,6 @@ class MAPOListStateWrapper(gym.ObservationWrapper):
                                         norm])
                         else:
                             lst.extend([0] * 4)
-                        lst.extend({-1: [1, 0, 0], 0: [0, 1, 0], 1: [0, 0, 1]}[self.attrs['owned_team']])
                     return lst
                 else:
                     return [0] * 8
@@ -602,8 +608,7 @@ class MAPOListStateWrapper(gym.ObservationWrapper):
                      raw_obs={"ball": obs["ball"], "ball_direction": obs['ball_direction']},
                      location=obs['ball'] - player_location,
                      absolute_location=obs['ball'],
-                     attrs=dict(owned_team=obs['ball_owned_team'],
-                                move_direction=obs['ball_direction']))
+                     attrs=dict(move_direction=obs['ball_direction']))
         obj_lst.append(ball)
 
         return obj_lst
@@ -619,8 +624,8 @@ class MAPOListStateWrapper(gym.ObservationWrapper):
       observation: observation that the environment returns
 
     Returns:
-      (N, 194) shaped representation, where N stands for the number of players
-      being controlled and 194 is the feature dimension.
+      (N, 197) shaped representation, where N stands for the number of players
+      being controlled and 197 is the feature dimension.
     """
 
         # Normalise rows for view directions
@@ -709,6 +714,8 @@ class MAPOListStateWrapper(gym.ObservationWrapper):
             o.extend(player_location[:2])
             o.append(obs['left_team_tired_factor'][player_id])
 
+            # Add encoding of team in possession and game mode.
+            o.extend({-1: [1, 0, 0], 0: [0, 1, 0], 1: [0, 0, 1]}[obs['ball_owned_team']])
             game_mode = [0] * 7
             game_mode[obs['game_mode']] = 1
             o.extend(game_mode)
