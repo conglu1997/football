@@ -305,7 +305,7 @@ class MAPOListStateWrapper(gym.ObservationWrapper):
             if po_depth_noise == 'default' else po_depth_noise
         self.number_of_players_controlled = self.env.unwrapped._config.number_of_players_agent_controls()
         self.observation_space = gym.spaces.Box(
-            low=-1, high=1, shape=(self.number_of_players_controlled, 115), dtype=np.float32)
+            low=-1, high=1, shape=(self.number_of_players_controlled, 197), dtype=np.float32)
         # Assign on first observation, right player detection doesn't work properly
         self.n_left_players = 0
         self.n_right_players = 0
