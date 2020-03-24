@@ -294,7 +294,7 @@ class MAPOListStateWrapper(gym.ObservationWrapper):
                  po_player_width=0.060,
                  po_player_view_radius=-1,
                  po_depth_noise='default',
-                 render_points=True):
+                 render_points=False):
         gym.ObservationWrapper.__init__(self, env)
         self.po_view_cone_xy_opening = po_view_cone_xy_opening
         self.po_player_width = po_player_width
