@@ -659,11 +659,6 @@ class MAPOListStateWrapper(gym.ObservationWrapper):
 
             obj_lst = self._encapsulate_objects(obs, player_location)
 
-            if self.full_obs:
-                print('full obs')
-            else:
-                print('not full obs')
-
             if not self.full_obs:
                 # update visibilities wrt player view radius
                 if self.po_player_view_radius != -1:
