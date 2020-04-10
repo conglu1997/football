@@ -39,16 +39,16 @@ def create_environment(env_name='',
                        number_of_right_players_agent_controls=0,
                        enable_sides_swap=False,
                        channel_dimensions=(
-                           observation_preprocessing.SMM_WIDTH,
-                           observation_preprocessing.SMM_HEIGHT),
+                               observation_preprocessing.SMM_WIDTH,
+                               observation_preprocessing.SMM_HEIGHT),
                        po_view_cone_xy_opening=160,
-                       po_view_cone_z_opening=70,
                        po_player_width=0.060,
-                       po_player_height=0.033,
                        po_player_view_radius=-1,  # switched off by default
-                       po_depth_noise="default"
-                      ):
-  """Creates a Google Research Football environment.
+                       po_depth_noise="default",
+                       render_points=False,
+                       full_obs_flag=False,
+                       ):
+    """Creates a Google Research Football environment.
 
   Args:
     env_name: a name of a scenario to run, e.g. "11_vs_11_stochastic".
@@ -121,49 +121,49 @@ def create_environment(env_name='',
   Returns:
     Google Research Football environment.
   """
-  assert env_name
-  players = [('agent:left_players=%d,right_players=%d' % (
-      number_of_left_players_agent_controls,
-      number_of_right_players_agent_controls))]
-  if extra_players is not None:
-    players.extend(extra_players)
-  c = config.Config({
-      'enable_sides_swap': enable_sides_swap,
-      'dump_full_episodes': enable_full_episode_videos,
-      'dump_scores': enable_goal_videos,
-      'players': players,
-      'level': env_name,
-      'render': render,
-      'tracesdir': logdir,
-      'write_video': write_video,
-  })
-  env = football_env.FootballEnv(c)
-  if dump_frequency > 1:
-    env = wrappers.PeriodicDumpWriter(env, dump_frequency)
-  assert 'scoring' in rewards.split(',')
-  if 'checkpoints' in rewards.split(','):
-    env = wrappers.CheckpointRewardWrapper(env)
-  if representation.startswith('pixels'):
-    env = wrappers.PixelsStateWrapper(env, 'gray' in representation,
-                                      channel_dimensions)
-  elif representation == 'simple115':
-    env = wrappers.Simple115StateWrapper(env)
-  elif representation == 'ma_po_list':
-    env = wrappers.MAPOListStateWrapper(env,
-                                        po_view_cone_xy_opening,
-                                        po_player_width,
-                                        po_player_view_radius,
-                                        po_depth_noise
-                                        )
-  elif representation == 'extracted':
-    env = wrappers.SMMWrapper(env, channel_dimensions)
-  else:
-    raise ValueError('Unsupported representation: {}'.format(representation))
-  if (number_of_left_players_agent_controls +
-      number_of_right_players_agent_controls == 1):
-    env = wrappers.SingleAgentObservationWrapper(env)
-    env = wrappers.SingleAgentRewardWrapper(env)
-  if stacked:
-    env = wrappers.FrameStack(env, 4)
+    assert env_name
+    players = [('agent:left_players=%d,right_players=%d' % (
+        number_of_left_players_agent_controls,
+        number_of_right_players_agent_controls))]
+    if extra_players is not None:
+        players.extend(extra_players)
+    c = config.Config({
+        'enable_sides_swap': enable_sides_swap,
+        'dump_full_episodes': enable_full_episode_videos,
+        'dump_scores': enable_goal_videos,
+        'players': players,
+        'level': env_name,
+        'render': render,
+        'tracesdir': logdir,
+        'write_video': write_video,
+    })
+    env = football_env.FootballEnv(c)
+    if dump_frequency > 1:
+        env = wrappers.PeriodicDumpWriter(env, dump_frequency)
+    assert 'scoring' in rewards.split(',')
+    if 'checkpoints' in rewards.split(','):
+        env = wrappers.CheckpointRewardWrapper(env)
+    if representation.startswith('pixels'):
+        env = wrappers.PixelsStateWrapper(env, 'gray' in representation,
+                                          channel_dimensions)
+    elif representation == 'simple115':
+        env = wrappers.Simple115StateWrapper(env)
+    elif representation == 'ma_po_list':
+        env = wrappers.MAPOListStateWrapper(env,
+                                            po_view_cone_xy_opening,
+                                            po_player_width,
+                                            po_player_view_radius,
+                                            po_depth_noise
+                                            )
+    elif representation == 'extracted':
+        env = wrappers.SMMWrapper(env, channel_dimensions)
+    else:
+        raise ValueError('Unsupported representation: {}'.format(representation))
+    if (number_of_left_players_agent_controls +
+            number_of_right_players_agent_controls == 1):
+        env = wrappers.SingleAgentObservationWrapper(env)
+        env = wrappers.SingleAgentRewardWrapper(env)
+    if stacked:
+        env = wrappers.FrameStack(env, 4)
 
-  return env
+    return env

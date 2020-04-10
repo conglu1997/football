@@ -294,7 +294,8 @@ class MAPOListStateWrapper(gym.ObservationWrapper):
                  po_player_width=0.060,
                  po_player_view_radius=-1,
                  po_depth_noise='default',
-                 render_points=False):
+                 render_points=False,
+                 full_obs_flag=False):
         gym.ObservationWrapper.__init__(self, env)
         self.po_view_cone_xy_opening = po_view_cone_xy_opening
         self.po_player_width = po_player_width
@@ -312,6 +313,7 @@ class MAPOListStateWrapper(gym.ObservationWrapper):
         self.player_view_directions = {}
 
         self.render_points = render_points
+        self.full_obs = full_obs_flag
 
     def _plot_points(self, obj_lists):
         import matplotlib.pyplot as plt
@@ -657,53 +659,54 @@ class MAPOListStateWrapper(gym.ObservationWrapper):
 
             obj_lst = self._encapsulate_objects(obs, player_location)
 
-            # update visibilities wrt player view radius
-            if self.po_player_view_radius != -1:
+            if not full_obs:
+                # update visibilities wrt player view radius
+                if self.po_player_view_radius != -1:
+                    for obj in obj_lst:
+                        if obj.distance > self.po_player_view_radius:
+                            obj.is_visible = False
+
                 for obj in obj_lst:
-                    if obj.distance > self.po_player_view_radius:
-                        obj.is_visible = False
+                    # make sure to not reset visible status
+                    if obj.is_visible:
+                        obj.is_visible = self._is_in_wedge(player_view_direction, obj.location,
+                                                           self.po_view_cone_xy_opening)
 
-            for obj in obj_lst:
-                # make sure to not reset visible status
-                if obj.is_visible:
-                    obj.is_visible = self._is_in_wedge(player_view_direction, obj.location,
-                                                       self.po_view_cone_xy_opening)
+                # update visibilities wrt occlusion
+                obj_dist_sorted = sorted([o for o in obj_lst if o.is_visible and o.type == 'player'],
+                                         key=lambda obj: obj.distance)
+                while len(obj_dist_sorted) > 1:
+                    curr_obj, obj_dist_sorted = obj_dist_sorted[0], obj_dist_sorted[1:]
 
-            # update visibilities wrt occlusion
-            obj_dist_sorted = sorted([o for o in obj_lst if o.is_visible and o.type == 'player'],
-                                     key=lambda obj: obj.distance)
-            while len(obj_dist_sorted) > 1:
-                curr_obj, obj_dist_sorted = obj_dist_sorted[0], obj_dist_sorted[1:]
+                    for obj in obj_dist_sorted:
+                        # relative location wrt curr_obj
+                        if np.linalg.norm(curr_obj.location[:2]) == 0.0 or np.linalg.norm(curr_obj.location) == 0.0:
+                            continue
 
-                for obj in obj_dist_sorted:
-                    # relative location wrt curr_obj
-                    if np.linalg.norm(curr_obj.location[:2]) == 0.0 or np.linalg.norm(curr_obj.location) == 0.0:
-                        continue
+                        blocked_xy_angle = 2 * np.degrees(
+                            np.arctan(self.po_player_width / np.linalg.norm(curr_obj.location[:2])))
 
-                    blocked_xy_angle = 2 * np.degrees(
-                        np.arctan(self.po_player_width / np.linalg.norm(curr_obj.location[:2])))
+                        obj.is_visible = not self._is_in_wedge(player_view_direction,
+                                                               obj.location,
+                                                               blocked_xy_angle)
 
-                    obj.is_visible = not self._is_in_wedge(player_view_direction,
-                                                           obj.location,
-                                                           blocked_xy_angle)
+                    obj_dist_sorted = [o for o in obj_dist_sorted if o.is_visible]
 
-                obj_dist_sorted = [o for o in obj_dist_sorted if o.is_visible]
-
-            # noise visible object coordinates according to their distance
-            if self.po_depth_noise is not None:
-                visible_objs = [obj for obj in obj_lst if obj.is_visible]
-                for obj in visible_objs:
-                    if self.po_depth_noise.get('type', None) == 'gaussian':
-                        if self.po_depth_noise.get('attenuation_type', None) == 'fixed_angular_resolution':
-                            angular_resolution = self.po_depth_noise.get('angular_resolution_degrees',
-                                                                         2) * np.pi / 180.0
-                            sigma = obj.distance * angular_resolution
-                            # noise relevant quantities
-                            obj.location += np.random.normal(0, sigma, (3,))
-                            obj.attrs['move_direction'] += np.random.normal(0, sigma, (3,))
-                            if obj.type == 'player':
-                                obj.location[2] = 0.0  # it is commonly known that players are confined to xy plane
-                                obj.attrs['view_direction'] += np.random.normal(0, sigma, (3,))
+                # noise visible object coordinates according to their distance
+                if self.po_depth_noise is not None:
+                    visible_objs = [obj for obj in obj_lst if obj.is_visible]
+                    for obj in visible_objs:
+                        if self.po_depth_noise.get('type', None) == 'gaussian':
+                            if self.po_depth_noise.get('attenuation_type', None) == 'fixed_angular_resolution':
+                                angular_resolution = self.po_depth_noise.get('angular_resolution_degrees',
+                                                                             2) * np.pi / 180.0
+                                sigma = obj.distance * angular_resolution
+                                # noise relevant quantities
+                                obj.location += np.random.normal(0, sigma, (3,))
+                                obj.attrs['move_direction'] += np.random.normal(0, sigma, (3,))
+                                if obj.type == 'player':
+                                    obj.location[2] = 0.0  # it is commonly known that players are confined to xy plane
+                                    obj.attrs['view_direction'] += np.random.normal(0, sigma, (3,))
 
             # collate observation from object representations
             o = []
