@@ -153,7 +153,8 @@ def create_environment(env_name='',
                                             po_view_cone_xy_opening,
                                             po_player_width,
                                             po_player_view_radius,
-                                            po_depth_noise
+                                            po_depth_noise,
+                                            full_obs_flag=full_obs_flag,
                                             )
     elif representation == 'extracted':
         env = wrappers.SMMWrapper(env, channel_dimensions)
