@@ -713,6 +713,10 @@ class MAPOListStateWrapper(gym.ObservationWrapper):
             for obj in obj_lst:
                 o.extend(obj.rep())
 
+            # If there were less than 11vs11 players, we backfill missing values with -1.
+            if len(o) < 184:
+                o.extend([-1] * (184 - len(o)))
+
             # Add in personal absolute location and tiredness.
             o.extend(player_location[:2])
             o.append(obs['left_team_tired_factor'][player_id])
@@ -723,6 +727,9 @@ class MAPOListStateWrapper(gym.ObservationWrapper):
             game_mode[obs['game_mode']] = 1
             o.extend(game_mode)
             final_obs.append(o)
+
+            # Make sure we have backfilled properly.
+            assert len(o) == 197
 
             # save object representations if rendering, can remove this later once code trusted
             if self.render_points:
