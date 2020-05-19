@@ -79,12 +79,12 @@ class PeriodicDumpWriter(gym.Wrapper):
     if (self._dump_frequency > 0 and
         (self._current_episode_number % self._dump_frequency == 0)):
       self.env._config.update(self._original_dump_config)
-      self.env.render()
+      # self.env.render()
     else:
       self.env._config.update({'write_video': False,
                                'dump_full_episodes': False,
                                'dump_scores': False})
-      self.env.disable_render()
+    self.env.disable_render()
     self._current_episode_number += 1
     return self.env.reset()
 
@@ -93,6 +93,80 @@ class Simple115StateWrapper(gym.ObservationWrapper):
   """A wrapper that converts an observation to 115-features state."""
 
   def __init__(self, env, fixed_positions=False):
+    """Initializes the wrapper.
+
+    Args:
+      env: an envorinment to wrap
+      fixed_positions: whether to fix observation indexes corresponding to teams
+    Note: simple115v2 enables fixed_positions option.
+    """
+    gym.ObservationWrapper.__init__(self, env)
+    shape = (self.env.unwrapped._config.number_of_players_agent_controls(), 115)
+    self.observation_space = gym.spaces.Box(
+        low=-1, high=1, shape=shape, dtype=np.float32)
+    self._fixed_positions = fixed_positions
+
+  def observation(self, observation):
+    """Converts an observation into simple115 (or simple115v2) format.
+
+    Args:
+      observation: observation that the environment returns
+
+    Returns:
+      (N, 115) shaped representation, where N stands for the number of players
+      being controlled.
+    """
+    final_obs = []
+    for obs in observation:
+      o = []
+      if self._fixed_positions:
+        for i, name in enumerate(['left_team', 'left_team_direction',
+                                  'right_team', 'right_team_direction']):
+          o.extend(obs[name].flatten())
+          # If there were less than 11vs11 players we backfill missing values
+          # with -1.
+          if len(o) < (i + 1) * 22:
+            o.extend([-1] * ((i + 1) * 22 - len(o)))
+      else:
+        o.extend(obs['left_team'].flatten())
+        o.extend(obs['left_team_direction'].flatten())
+        o.extend(obs['right_team'].flatten())
+        o.extend(obs['right_team_direction'].flatten())
+
+      # If there were less than 11vs11 players we backfill missing values with
+      # -1.
+      # 88 = 11 (players) * 2 (teams) * 2 (positions & directions) * 2 (x & y)
+      if len(o) < 88:
+        o.extend([-1] * (88 - len(o)))
+
+      # ball position
+      o.extend(obs['ball'])
+      # ball direction
+      o.extend(obs['ball_direction'])
+      # one hot encoding of which team owns the ball
+      if obs['ball_owned_team'] == -1:
+        o.extend([1, 0, 0])
+      if obs['ball_owned_team'] == 0:
+        o.extend([0, 1, 0])
+      if obs['ball_owned_team'] == 1:
+        o.extend([0, 0, 1])
+
+      active = [0] * 11
+      if obs['active'] != -1:
+        active[obs['active']] = 1
+      o.extend(active)
+
+      game_mode = [0] * 7
+      game_mode[obs['game_mode']] = 1
+      o.extend(game_mode)
+      final_obs.append(o)
+    return np.array(final_obs, dtype=np.float32)
+
+
+class EgocentricSimple115StateWrapper(gym.ObservationWrapper):
+  """A wrapper that converts an observation to an egocentric 115-features state."""
+
+  def __init__(self, env, fixed_positions=True):
     """Initializes the wrapper.
 
     Args:

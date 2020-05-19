@@ -238,11 +238,11 @@ class FootballEnvCore(object):
       self._trace = None
       fps = self._step_count / (debug['time'] - self._episode_start)
       game_fps = self._step_count / self._steps_time
-      logging.info(
-          'Episode reward: %.2f score: [%d, %d], steps: %d, '
-          'FPS: %.1f, gameFPS: %.1f', self._cumulative_reward,
-          single_observation['score'][0], single_observation['score'][1],
-          self._step_count, fps, game_fps)
+      # logging.info(
+      #     'Episode reward: %.2f score: [%d, %d], steps: %d, '
+      #     'FPS: %.1f, gameFPS: %.1f', self._cumulative_reward,
+      #     single_observation['score'][0], single_observation['score'][1],
+      #     self._step_count, fps, game_fps)
     if self._step_count == 1:
       # Start writing episode_done
       self.write_dump('episode_done')

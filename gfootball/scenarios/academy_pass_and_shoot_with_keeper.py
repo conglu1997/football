@@ -21,12 +21,12 @@ from . import *
 
 
 def build_scenario(builder):
-  builder.config().game_duration = 400
+  builder.config().game_duration = 2000
   builder.config().deterministic = False
   builder.config().offsides = False
   builder.config().end_episode_on_score = True
   builder.config().end_episode_on_out_of_play = True
-  builder.config().end_episode_on_possession_change = True
+  builder.config().end_episode_on_possession_change = False
   builder.SetBallPosition(0.7, -0.28)
 
   builder.SetTeam(Team.e_Left)

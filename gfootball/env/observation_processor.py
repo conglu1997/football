@@ -397,7 +397,7 @@ class ObservationProcessor(object):
       logging.debug('Dump "%s": already pending', name)
       return
     if config._max_count <= 0:
-      logging.debug('Dump "%s": count limit reached / disabled', name)
+      # logging.debug('Dump "%s": count limit reached / disabled', name)
       return
     if config._last_dump_time >= timeit.default_timer() - config._min_frequency:
       logging.debug('Dump "%s": too frequent', name)
@@ -408,7 +408,7 @@ class ObservationProcessor(object):
       self._dump_directory = self._config['tracesdir']
       if WRITE_FILES:
         if not os.path.exists(self._dump_directory):
-          os.makedirs(self._dump_directory)
+          os.makedirs(self._dump_directory, exist_ok=True)
     dump_name = '{2}/{0}_{1}'.format(name,
         datetime.datetime.now().strftime('%Y%m%d-%H%M%S%f'),
         self._dump_directory)
