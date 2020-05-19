@@ -246,7 +246,46 @@ class FootballEnvCore(object):
     if self._step_count == 1:
       # Start writing episode_done
       self.write_dump('episode_done')
+
+    # Pass global state through info for QMIX (Cong)
+    info['global_state'] = self._get_global_state()
+
     return self._observation, reward, episode_done, info
+
+
+  def _get_global_state(self):
+    o = []
+    obs = self._observation
+    for i, name in enumerate(['left_team', 'left_team_direction',
+                              'right_team', 'right_team_direction']):
+      o.extend(obs[name].flatten())
+      # If there were less than 11vs11 players we backfill missing values
+      # with -1.
+      if len(o) < (i + 1) * 22:
+        o.extend([-1] * ((i + 1) * 22 - len(o)))
+
+    # If there were less than 11vs11 players we backfill missing values with
+    # -1.
+    # 88 = 11 (players) * 2 (teams) * 2 (positions & directions) * 2 (x & y)
+    if len(o) < 88:
+      o.extend([-1] * (88 - len(o)))
+
+    # ball position
+    o.extend(obs['ball'])
+    # ball direction
+    o.extend(obs['ball_direction'])
+    # one hot encoding of which team owns the ball
+    if obs['ball_owned_team'] == -1:
+      o.extend([1, 0, 0])
+    if obs['ball_owned_team'] == 0:
+      o.extend([0, 1, 0])
+    if obs['ball_owned_team'] == 1:
+      o.extend([0, 0, 1])
+
+    game_mode = [0] * 7
+    game_mode[obs['game_mode']] = 1
+    o.extend(game_mode)
+    return o
 
 
   def _retrieve_observation(self):
