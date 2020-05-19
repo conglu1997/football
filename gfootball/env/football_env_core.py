@@ -285,7 +285,7 @@ class FootballEnvCore(object):
     game_mode = [0] * 7
     game_mode[obs['game_mode']] = 1
     o.extend(game_mode)
-    return o
+    return np.array(o, dtype=np.float32)
 
 
   def _retrieve_observation(self):
