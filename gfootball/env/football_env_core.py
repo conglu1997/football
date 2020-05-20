@@ -248,12 +248,12 @@ class FootballEnvCore(object):
       self.write_dump('episode_done')
 
     # Pass global state through info for QMIX (Cong)
-    info['global_state'] = self._get_global_state()
+    info['global_state'] = self.get_global_state()
 
     return self._observation, reward, episode_done, info
 
 
-  def _get_global_state(self):
+  def get_global_state(self):
     o = []
     obs = self._observation
     for i, name in enumerate(['left_team', 'left_team_direction',
