@@ -190,6 +190,9 @@ class FootballEnv(gym.Env):
     self._cached_observation = None
     return self.observation()
 
+  def get_global_state(self):
+    return self._env.get_global_state()
+
   def observation(self):
     if not self._cached_observation:
       self._cached_observation = self._env.observation()
