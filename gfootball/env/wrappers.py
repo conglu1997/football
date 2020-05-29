@@ -392,6 +392,10 @@ class PossessionPenaltyWrapper(gym.RewardWrapper):
     self.prev_ball_owned_team = 0
     self.magnitude = magnitude
 
+  def reset(self):
+    self.prev_ball_owned_team = 0
+    return self.env.reset()
+
   def reward(self, reward):
     observation = self.env.unwrapped.observation()
     if observation is None:
