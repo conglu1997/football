@@ -383,6 +383,45 @@ class CheckpointRewardWrapper(gym.RewardWrapper):
     return reward
 
 
+class PossessionPenaltyWrapper(gym.RewardWrapper):
+  """A wrapper that adds a penalty for losing possession."""
+
+  def __init__(self, env, magnitude=0.2):
+    gym.RewardWrapper.__init__(self, env)
+    # Ignore no possessions (-1), we start off with the ball (0).
+    self.prev_ball_owned_team = 0
+    self.magnitude = magnitude
+
+  def reward(self, reward):
+    observation = self.env.unwrapped.observation()
+    if observation is None:
+      return reward
+
+    assert len(reward) == len(observation)
+
+    o = observation[0]
+    if 'ball_owned_team' not in o:
+      return reward
+
+    poss_bonus = 0
+
+    # Gained the ball (we are left team)
+    if o['ball_owned_team'] == 0 and self.prev_ball_owned_team != 0:
+      poss_bonus = self.magnitude
+
+    # Lost the ball
+    if o['ball_owned_team'] == 1 and self.prev_ball_owned_team != 1:
+      poss_bonus = -self.magnitude
+
+    for rew_index in range(len(reward)):
+      reward[rew_index] += poss_bonus
+
+    if o['ball_owned_team'] != -1:
+      self.prev_ball_owned_team = o['ball_owned_team']
+
+    return reward
+
+
 class FrameStack(gym.Wrapper):
   """Stack k last observations."""
 
