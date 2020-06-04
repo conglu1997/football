@@ -191,7 +191,7 @@ BOOST_PYTHON_MODULE(_gameplayfootball) {
   class_<FormationEntry>("FormationEntry",
                          init<float, float, e_PlayerRole, bool, bool>())
       .def_readonly("role", &FormationEntry::role)
-      .add_property("position", &FormationEntry::position_env)
+      .add_property("position", &FormationEntry::position_env, &FormationEntry::set_position_env)
       .def_readwrite("lazy", &FormationEntry::lazy)
       .def_readwrite("controllable", &FormationEntry::controllable);
 

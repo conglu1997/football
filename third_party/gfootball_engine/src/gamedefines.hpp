@@ -277,6 +277,13 @@ struct FormationEntry {
                    position.coords[1] / FORMATION_Y_SCALE,
                    position.coords[2]);
   }
+  void set_position_env(Vector3 inp) {
+    // Log(e_Warning, "FormationEntry", "set_position_env", "Called coordinate Change");
+    position = Vector3(inp.coords[0], inp.coords[1] * FORMATION_Y_SCALE, 0);
+    start_position = Vector3(inp.coords[0], inp.coords[1] * FORMATION_Y_SCALE, 0);
+    databasePosition = Vector3(inp.coords[0], inp.coords[1] * FORMATION_Y_SCALE, 0);
+  }
+
   void ProcessState(EnvState* state) { DO_VALIDATION;
     state->process(static_cast<void*>(&role), sizeof(role));
     state->process(databasePosition);
