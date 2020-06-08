@@ -417,6 +417,15 @@ class PossessionPenaltyWrapper(gym.RewardWrapper):
     if o['ball_owned_team'] == 1 and self.prev_ball_owned_team != 1:
       poss_bonus = -self.magnitude
 
+    # Out of play penalties
+    if self.prev_ball_owned_team == 0 and o['game_mode'] != 0:
+      if o['game_mode'] == 2 or o['game_mode'] == 4 or o['game_mode'] == 5:
+        # Out of play
+        poss_bonus -= 1
+      elif o['game_mode'] == 3 or o['game_mode'] == 6:
+        # Foul
+        poss_bonus -= 1
+
     for rew_index in range(len(reward)):
       reward[rew_index] += poss_bonus
 
