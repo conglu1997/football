@@ -73,25 +73,34 @@ class FootballEnvCore(object):
     # call works fine (get/setState makes sure env. config is the same).
     self.reset(inc=0)
 
-  def position_restarts(self, _config):
+  def position_restarts(self, _config, move_goalkeeper=False, difficulty_override=-1, test_mode=False, t_env=-1):
       game_c = self._config.ScenarioConfig()
       scenario = self._config["level"]
 
+      # Range of the centers
+      x_low = 0.6
+      x_high = 0.95
+
       if scenario == "academy_3_vs_1_with_keeper":
-        center_cm_player_position = Vec3(float(np.random.uniform(low=0.5, high=0.95, size=1)),
-                                         float(np.random.normal(loc=0.0, scale=0.05, size=1).clip(min=-1, max=1)),
-                                         0.0)
-        side_1_CM_player_position = Vec3(float(np.random.uniform(low=0.5, high=0.95, size=1)),
-                                         float(
-                                           np.abs(np.random.normal(loc=0.2, scale=0.01, size=1)).clip(min=-1, max=1)),
-                                         0.0)
-        side_2_CM_player_position = Vec3(float(np.random.uniform(low=0.5, high=0.95, size=1)),
-                                         float(-1.0 * np.abs(np.random.normal(loc=0.2, scale=0.01, size=1)).clip(min=-1,
-                                                                                                                 max=1)),
-                                         0.0)
+        if test_mode:
+          # Default positions
+          center_cm_player_position = Vec3(0.6, 0.0, 0.0)
+          side_1_CM_player_position = Vec3(0.7, 0.2, 0.0)
+          side_2_CM_player_position = Vec3(0.7, -0.2, 0.0)
+        else:
+          center_cm_player_position = Vec3(float(np.random.uniform(low=x_low, high=x_high, size=1)),
+                                           float(np.random.normal(loc=0.0, scale=0.05, size=1).clip(min=-1, max=1)),
+                                           0.0)
+          side_1_CM_player_position = Vec3(float(np.random.uniform(low=x_low, high=x_high, size=1)),
+                                           float(
+                                             np.abs(np.random.normal(loc=0.2, scale=0.01, size=1)).clip(min=-1, max=1)),
+                                           0.0)
+          side_2_CM_player_position = Vec3(float(np.random.uniform(low=x_low, high=x_high, size=1)),
+                                           float(-1.0 * np.abs(np.random.normal(loc=0.2, scale=0.01, size=1)).clip(min=-1,
+                                                                                                                   max=1)),
+                                           0.0)
         ball_position_X = center_cm_player_position[0] + 0.02
         ball_position_Y = center_cm_player_position[1]
-
         CM_PLAYER_POSITIONS = [center_cm_player_position, side_1_CM_player_position, side_2_CM_player_position]
 
         cm_player_index = 0
@@ -101,9 +110,38 @@ class FootballEnvCore(object):
             cm_player_index += 1
         game_c.ball_position[0] = ball_position_X
         game_c.ball_position[1] = ball_position_Y
+
+      elif scenario == "academy_empty_goal_close":
+        if test_mode:
+          # Default positions
+          center_cm_player_position = Vec3(0.75, 0.0, 0.0)
+        else:
+          center_cm_player_position = Vec3(float(np.random.uniform(low=x_low, high=x_high, size=1)),
+                                           float(np.random.normal(loc=0.0, scale=0.05, size=1).clip(min=-1, max=1)),
+                                           0.0)
+        ball_position_X = center_cm_player_position[0] + 0.02
+        ball_position_Y = center_cm_player_position[1]
+
+        for plys in game_c.left_team:
+          if plys.role == libgame.e_PlayerRole.e_PlayerRole_CB:
+            plys.position = center_cm_player_position
+        game_c.ball_position[0] = ball_position_X
+        game_c.ball_position[1] = ball_position_Y
+
+      # Shift goalie to opposite side
+      if move_goalkeeper:
+        for plys in game_c.right_team:
+          if plys.role == libgame.e_PlayerRole.e_PlayerRole_GK:
+            plys.position = Vec3(1.0, 0.0, 0.0)
+
+      # Override the difficulty
+      if difficulty_override != -1:
+        assert (0 <= difficulty_override <= 1)
+        game_c.right_team_difficulty = difficulty_override
+
       return game_c
 
-  def _reset(self, animations, inc):
+  def _reset(self, animations, inc, move_goalkeeper=False, difficulty_override=-1, test_mode=False, t_env=-1):
     global _unused_engines
     global _unused_rendering_engine
     assert (self._env.state == GameState.game_created or
@@ -119,11 +157,12 @@ class FootballEnvCore(object):
     self._config.NewScenario(inc=inc)
     if self._env.state == GameState.game_created:
       self._env.start_game()
-    game_config = self.position_restarts(self._config)
+    game_config = self.position_restarts(self._config, move_goalkeeper=move_goalkeeper,
+                                         difficulty_override=difficulty_override, test_mode=test_mode, t_env=t_env)
     self._env.reset(game_config, animations)
     self._env.state = GameState.game_running
 
-  def reset(self, inc=1):
+  def reset(self, inc=1, move_goalkeeper=False, difficulty_override=-1, test_mode=False, t_env=-1):
     """Reset environment for a new episode using a given config."""
     self._episode_start = timeit.default_timer()
     self._action_set = football_action_set.get_action_set(self._config)
@@ -131,7 +170,8 @@ class FootballEnvCore(object):
     self._cumulative_reward = 0
     self._step_count = 0
     self._trace = trace
-    self._reset(self._env.game_config.render, inc=inc)
+    self._reset(self._env.game_config.render, inc=inc, move_goalkeeper=move_goalkeeper,
+                difficulty_override=difficulty_override, test_mode=test_mode, t_env=t_env)
     while not self._retrieve_observation():
       self._env.step()
     return True

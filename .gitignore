@@ -12,3 +12,5 @@ third_party/gfootball_engine/cmake_install.cmake
 third_party/gfootball_engine/gameplayfootball
 footballenv/
 cmake-build-debug/
+.DS_store
+.idea/

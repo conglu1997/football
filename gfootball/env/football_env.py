@@ -183,8 +183,9 @@ class FootballEnv(gym.Env):
     info['score_reward'] = score_reward
     return (self.observation(), np.array(reward, dtype=np.float32), done, info)
 
-  def reset(self):
-    self._env.reset()
+  def reset(self, move_goalkeeper=False, difficulty_override=-1, test_mode=False, t_env=-1):
+    self._env.reset(move_goalkeeper=move_goalkeeper, difficulty_override=difficulty_override, test_mode=test_mode,
+                    t_env=t_env)
     for player in self._players:
       player.reset()
     self._cached_observation = None
