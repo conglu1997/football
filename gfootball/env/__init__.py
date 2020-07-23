@@ -106,6 +106,7 @@ def create_environment(env_name='',
                        channel_dimensions=(
                            observation_preprocessing.SMM_WIDTH,
                            observation_preprocessing.SMM_HEIGHT),
+                       action_set='default',
                        other_config_options={}):
   """Creates a Google Research Football environment.
 
@@ -176,6 +177,7 @@ def create_environment(env_name='',
         controls.
     channel_dimensions: (width, height) tuple that represents the dimensions of
        SMM or pixels representation.
+    action_set: 'default' normally
     other_config_options: dict that allows directly setting other options in
        the Config
   Returns:
@@ -194,6 +196,7 @@ def create_environment(env_name='',
       'level': env_name,
       'tracesdir': logdir,
       'write_video': write_video,
+      'action_set': action_set,
   }
   config_values.update(other_config_options)
   c = config.Config(config_values)

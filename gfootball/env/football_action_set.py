@@ -169,6 +169,22 @@ action_set_dict = {
         action_dribble,
         action_release_dribble,
     ],
+    "non_sticky": [
+        action_idle,
+        CoreAction(e_BackendAction.left, "left", sticky=False, directional=True),
+        CoreAction(e_BackendAction.top_left, "top_left", sticky=False, directional=True),
+        CoreAction(e_BackendAction.top, "top", sticky=False, directional=True),
+        CoreAction(e_BackendAction.top_right, "top_right", sticky=False, directional=True),
+        CoreAction(e_BackendAction.right, "right", sticky=False, directional=True),
+        CoreAction(e_BackendAction.bottom_right, "bottom_right", sticky=False, directional=True),
+        CoreAction(e_BackendAction.bottom, "bottom", sticky=False, directional=True),
+        CoreAction(e_BackendAction.bottom_left, "bottom_left", sticky=False, directional=True),
+        action_long_pass,
+        action_high_pass,
+        action_short_pass,
+        action_shot,
+        action_sliding,
+    ],
 }
 
 reverse_action_mapping = {
