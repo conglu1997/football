@@ -185,6 +185,15 @@ action_set_dict = {
         action_shot,
         action_sliding,
     ],
+    "simple_no_pass": [
+        action_idle,
+        action_left,
+        action_top,
+        action_right,
+        action_bottom,
+        action_shot,
+        action_release_direction,
+    ],
 }
 
 reverse_action_mapping = {
